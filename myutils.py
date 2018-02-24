@@ -23,10 +23,17 @@ def select_gpus(gpus_arg):
     gpus = []
   return gpus
 
-def read_text_file(path):
-  from numpy import loadtxt
-  lines = loadtxt(path, comments="#", delimiter=",", unpack=False)
+def read_text_file_lines(filename):
+  lines = list()
+  with open(filename) as f:
+    for line in f:
+      lines.append(line.replace('\n',''))
   return lines
+
+def dump_str_list(examples_dirs, examples_list_file):
+  with open(examples_list_file, 'w') as file_handler:
+    for item in examples_dirs:
+      file_handler.write("%s\n" % item)
 
 def tensor2array(tensor, max_value=255, colormap='rainbow'):
     if tensor.is_cuda:
@@ -75,11 +82,13 @@ def imshow(im, path=None, biggest_dim=None, normalize_image=True, max_batch_disp
     #it is a path
     pic = Image.open(im)
     im = np.array(pic, dtype='float32')
+  if im.dtype == 'uint8':
+    im = im / 255.0
   if len(im.shape) > 4:
     raise Exception('Im has more than 4 dims')
   if len(im.shape) == 4:
-    for k in range(min(max_batch_display,im.shape[0])):
-      imshow(im[k])
+    #video, first dimension is frames
+    vis.video(im, window=window, env=env)
   if len(im.shape) == 3 and im.shape[-1] in [1,3]:
     #put automatically channel first if its last
     im = im.transpose((2,0,1))
@@ -117,6 +126,7 @@ def imshow_vis(im, title=None, window=None, env=None):
 def imshow_matplotlib(im, path):
   imwrite(path,np.transpose(im, (1, 2, 0)))
 
+import matplotlib.pyplot as pyplt
 def histogram_image(array, nbins=20, legend=None):
   if type(array) == list:
     array = np.asarray(array)
