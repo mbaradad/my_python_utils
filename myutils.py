@@ -8,10 +8,14 @@ from imageio import imwrite
 from scipy import misc
 from skimage.transform import resize
 
+import imageio
 import cv2
 import numpy as np
 import torch
 from torch.autograd import Variable
+from skvideo.io import FFmpegWriter as VideoWriter
+import tempfile
+from PIL import Image
 
 def select_gpus(gpus_arg):
   #so that default gpu is one of the selected, instead of 0
@@ -86,9 +90,6 @@ def imshow(im, path=None, biggest_dim=None, normalize_image=True, max_batch_disp
     im = im / 255.0
   if len(im.shape) > 4:
     raise Exception('Im has more than 4 dims')
-  if len(im.shape) == 4:
-    #video, first dimension is frames
-    vis.video(im, window=window, env=env)
   if len(im.shape) == 3 and im.shape[-1] in [1,3]:
     #put automatically channel first if its last
     im = im.transpose((2,0,1))
@@ -108,9 +109,28 @@ def imshow(im, path=None, biggest_dim=None, normalize_image=True, max_batch_disp
   if normalize_image and im.max() != im.min():
     im = (im - im.min())/(im.max() - im.min())
   if path is None:
-    imshow_vis(im, title=title, window=window, env=env)
+    if len(im.shape) == 4:
+      vidshow_vis(im, title=title, window=window, env=env)
+    else:
+      imshow_vis(im, title=title, window=window, env=env)
   else:
-    imshow_matplotlib(im, path)
+    if len(im.shape) == 4:
+      make_gif(im, path=path)
+    else:
+      imshow_matplotlib(im, path)
+
+def make_gif(ims, path):
+  #if ims.dtype != 'uint8':
+  #  ims = np.array(ims*255, dtype='uint8')
+  if ims.shape[1] in [1,3]:
+    ims = ims.transpose((0,2,3,1))
+  if ims.shape[-1] == 1:
+    ims = np.tile(ims, (1,1,1,3))
+  with imageio.get_writer(path) as gif_writer:
+    for k in range(ims.shape[0]):
+      #imsave(ims[k].mean()
+      gif_writer.append_data(ims[k])
+
 
 def imshow_vis(im, title=None, window=None, env=None):
   opts = dict()
@@ -122,6 +142,30 @@ def imshow_vis(im, title=None, window=None, env=None):
   if window is None:
     window = title
   vis.image(im, win=window, opts=opts, env=env)
+
+def vidshow_vis(video, title=None, window=None, env=None):
+  if video.shape[1] == 1 or video.shape[1] == 3:
+    video = video.transpose(0,2,3,1)
+  if video.shape[1] == 1:
+    video = np.tile(video,(1,1,1,3))
+  opts = dict()
+  if not title is None:
+    opts['caption'] = title
+  if not video.dtype is np.uint8:
+    video = np.array(video * 255, dtype='uint8')
+  vis.win_exists(title)
+  if window is None:
+    window = title
+
+  videofile = '/tmp/%s.ogv' % next(tempfile._get_candidate_names())
+  writer = VideoWriter(videofile)
+  for i in range(video.shape[0]):
+    im = Image.fromarray(np.transpose(video[i],(2,0,1)))
+    # performs a rescale, that fits inside the (720,720)
+    im.thumbnail((300, 300), Image.ANTIALIAS)
+    writer.writeFrame(np.array(im))
+  writer.close()
+  vis.video(videofile=videofile, win=window, opts=opts, env=env)
 
 def imshow_matplotlib(im, path):
   imwrite(path,np.transpose(im, (1, 2, 0)))
