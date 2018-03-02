@@ -80,7 +80,7 @@ from PIL import Image
 
 vis = visdom.Visdom(port=12890)
 
-def imshow(im, path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, title=None, window=None, env=None):
+def imshow(im, path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, title=None, window=None, env=None, fps=None):
   im = tonumpy(im)
   if type(im) == 'string':
     #it is a path
@@ -115,13 +115,13 @@ def imshow(im, path=None, biggest_dim=None, normalize_image=True, max_batch_disp
       imshow_vis(im, title=title, window=window, env=env)
   else:
     if len(im.shape) == 4:
-      make_gif(im, path=path)
+      make_gif(im, path=path, fps=fps)
     else:
       imshow_matplotlib(im, path)
 
-def make_gif(ims, path):
-  #if ims.dtype != 'uint8':
-  #  ims = np.array(ims*255, dtype='uint8')
+def make_gif(ims, path, fps=None):
+  if ims.dtype != 'uint8':
+    ims = np.array(ims*255, dtype='uint8')
   if ims.shape[1] in [1,3]:
     ims = ims.transpose((0,2,3,1))
   if ims.shape[-1] == 1:
@@ -130,6 +130,9 @@ def make_gif(ims, path):
     for k in range(ims.shape[0]):
       #imsave(ims[k].mean()
       gif_writer.append_data(ims[k])
+  if not fps is None:
+    gif = imageio.mimread(path)
+    imageio.mimsave(path, gif, fps=fps)
 
 
 def imshow_vis(im, title=None, window=None, env=None):
