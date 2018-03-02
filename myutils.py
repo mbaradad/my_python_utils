@@ -311,7 +311,7 @@ def get_essential_matrix(src_pts, tgt_pts, K):
 
   return E, R, t
 
-def get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None):
+def get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None, N_MATCHES=100):
   sift = cv2.xfeatures2d.SIFT_create()
   ref_kp, ref_desc = sift.detectAndCompute(gray_ref_img, None)
   tgt_kp, tgt_desc = sift.detectAndCompute(gray_tgt_img, None)
@@ -320,7 +320,6 @@ def get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None):
 
   matches = bf.match(ref_desc, tgt_desc)
   # draw the top N matches
-  N_MATCHES = 100
   if mask_ref_and_target is None:
     # Sort the matches in the order of their distance.
     matches = sorted(matches, key=lambda x: x.distance)
@@ -343,16 +342,24 @@ def get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None):
 
   return src_pts, dst_pts, ref_kp, tgt_kp, matches
 
-def compute_sift_image(ref_img, tgt_img, intrinsics, mask_ref_and_target=None, make_plots=True):
-  env = 'sift' + '_masked' if  not mask_ref_and_target is None else ''
+def compute_sift_image(ref_img, tgt_img, intrinsics, mask_ref_and_target=None, make_plots=True, N_MATCHES=100, env=None):
+  if env is None:
+    env = 'sift' + '_masked' if  not mask_ref_and_target is None else ''
   if ref_img.shape[0] in [1,3]:
     ref_img = np.transpose(ref_img, (1,2,0))
   if tgt_img.shape[0] in [1, 3]:
     tgt_img = np.transpose(tgt_img, (1,2,0))
-  gray_ref_img = cv2.cvtColor(ref_img, cv2.COLOR_BGR2GRAY)
-  gray_tgt_img = cv2.cvtColor(tgt_img, cv2.COLOR_BGR2GRAY)
+  if len(ref_img.shape) == 3 and ref_img.shape[-1] == 3:
+    gray_ref_img = cv2.cvtColor(ref_img, cv2.COLOR_BGR2GRAY)
+    gray_tgt_img = cv2.cvtColor(tgt_img, cv2.COLOR_BGR2GRAY)
+  else:
+    gray_ref_img = ref_img
+    gray_tgt_img = tgt_img
+  if len(ref_img.shape) == 2:
+    ref_img = ref_img[:,:,None]
+    tgt_img = tgt_img[:, :, None]
 
-  src_pts, dst_pts, ref_kp, tgt_kp, matches = get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None)
+  src_pts, dst_pts, ref_kp, tgt_kp, matches = get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None, N_MATCHES=N_MATCHES)
   match_img = cv2.drawMatches(
     gray_ref_img, ref_kp,
     gray_tgt_img, tgt_kp,
@@ -366,7 +373,7 @@ def compute_sift_image(ref_img, tgt_img, intrinsics, mask_ref_and_target=None, m
   h, w = ref_img.shape[:2]
   pts = np.float32([[0, 0], [0, h - 1], [w - 1, h - 1], [w - 1, 0]]).reshape(-1, 1, 2)
   dst = cv2.perspectiveTransform(pts, M)
-  warped_image = cv2.warpPerspective(tgt_img, np.linalg.inv(M), (tgt_img.shape[1], tgt_img.shape[0]))
+  #warped_image = cv2.warpPerspective(tgt_img, np.linalg.inv(M), (tgt_img.shape[1], tgt_img.shape[0]))
 
   tgt_img_with_homo = tgt_img.copy()
   tgt_img_with_homo[:,:,0] = cv2.polylines(tgt_img[:,:,0], [np.int32(dst)], True, 255, 3, cv2.LINE_AA)
@@ -383,10 +390,8 @@ def compute_sift_image(ref_img, tgt_img, intrinsics, mask_ref_and_target=None, m
       imshow(mask_ref_and_target[0], title='ref_img_mask', window='ref_img_mask', env=env)
       imshow(mask_ref_and_target[1], title='tgt_img_mask', window='tgt_img_mask', env=env)
 
-    imshow(warped_image/255.0, title='warped_target', window='warped_target', env=env)
-
+    #imshow(warped_image/255.0, title='warped_target', window='warped_target', env=env)
     #print t
-
     imshow(ref_img / 255.0, title='ref_img', window='ref_img', env=env)
     imshow(cv2.drawKeypoints(gray_ref_img, ref_kp, ref_img.copy()) / 255.0, title='sift_ref_features',
            window='sift_ref_features', env=env)
@@ -396,7 +401,7 @@ def compute_sift_image(ref_img, tgt_img, intrinsics, mask_ref_and_target=None, m
     imshow(match_img / 255.0, title='sift_matches', window='sift_matches', env=env)
 
   print t[-1]
-  return E, R, t
+  return E, R, t, src_pts, dst_pts
 
 
 def get_unknown_intrinsics(im_h, im_w):
