@@ -16,6 +16,8 @@ from torch.autograd import Variable
 from skvideo.io import FFmpegWriter as VideoWriter
 import tempfile
 from PIL import Image
+import json
+
 
 def select_gpus(gpus_arg):
   #so that default gpu is one of the selected, instead of 0
@@ -426,6 +428,13 @@ def get_kitti_simulated_intrinsics(im_h, im_w):
                          [0, dataset_f, offset_y],
                          [0,         0, 1.000000e+00]], dtype='float32')
   return intrinsics
+
+def load_json(file_name):
+  with open(file_name) as handle:
+    return json.loads(handle.read())
+def dump_json(json_dict, filename):
+  with open(filename, 'w') as fp:
+    json.dump(json_dict, fp, indent=4)
 
 def np_to_tensor(np_obj):
   return torch.FloatTensor(np_obj)
