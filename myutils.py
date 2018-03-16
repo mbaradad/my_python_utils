@@ -9,10 +9,11 @@ from scipy import misc
 from skimage.transform import resize
 
 import imageio
-import cv2
-import numpy as np
 import torch
 from torch.autograd import Variable
+import cv2
+import numpy as np
+
 from skvideo.io import FFmpegWriter as VideoWriter
 import tempfile
 from PIL import Image
@@ -249,6 +250,8 @@ def create_flow_image(flow):
   return rgb
 
 def undo_img_normalization(img, dataset='movies'):
+  if img.shape[0] == 1:
+    return img
   from data.movie_sequence_dataset import MovieSequenceDataset
   if dataset != 'movies':
     raise Exception('Not implemented!')
@@ -417,7 +420,9 @@ def get_unknown_intrinsics(im_h, im_w):
                          [0,         0, 1.000000e+00]], dtype='float32')
   return intrinsics
 
+
 def get_kitti_simulated_intrinsics(im_h, im_w):
+
   KITTI_DATASET_CAM_F = 7.215377e+02
   KITTI_DATASET_IMG_W = 1242
   KITTI_DATASET_IMG_H = 375
@@ -426,6 +431,18 @@ def get_kitti_simulated_intrinsics(im_h, im_w):
   offset_y = (im_h - 1.0) / 2
   intrinsics = np.array([[dataset_f, 0, offset_x],
                          [0, dataset_f, offset_y],
+                         [0,         0, 1.000000e+00]], dtype='float32')
+  return intrinsics
+
+
+def get_simulated_intrinsics(im_h, im_w):
+  #TODO: maybe also learn f, which should be more robust with 3d movies
+  offset_x = (im_w - 1.0) / 2
+  offset_y = (im_h - 1.0) / 2
+  #same as OpensFM prior focal length
+  f = 0.85*im_w
+  intrinsics = np.array([[f, 0, offset_x],
+                         [0, f, offset_y],
                          [0,         0, 1.000000e+00]], dtype='float32')
   return intrinsics
 
