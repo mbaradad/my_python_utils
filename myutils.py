@@ -1,6 +1,5 @@
 import cPickle as pickle
 import os
-import shutil
 
 import matplotlib
 import visdom
@@ -16,7 +15,6 @@ import numpy as np
 
 from skvideo.io import FFmpegWriter as VideoWriter
 import tempfile
-from PIL import Image
 import json
 
 
@@ -252,7 +250,7 @@ def create_flow_image(flow):
 def undo_img_normalization(img, dataset='movies'):
   if img.shape[0] == 1:
     return img
-  from data.movie_sequence_dataset import MovieSequenceDataset
+  from data.datagenerators.movie_sequence_dataset import MovieSequenceDataset
   if dataset != 'movies':
     raise Exception('Not implemented!')
   if img.shape[0] == 3:
@@ -261,7 +259,7 @@ def undo_img_normalization(img, dataset='movies'):
     return img * MovieSequenceDataset.getstd() + MovieSequenceDataset.getmean()
 
 def do_img_normalization(img, dataset='movies'):
-  from data.movie_sequence_dataset import MovieSequenceDataset
+  from data.datagenerators.movie_sequence_dataset import MovieSequenceDataset
   if dataset != 'movies':
     raise Exception('Not implemented!')
   if img.shape[0] == 3:
@@ -278,8 +276,22 @@ def tonumpy(tensor):
     tensor = tensor.cpu()
   return tensor.numpy()
 
+def totorch(numpy_array):
+  return torch.FloatTensor(numpy_array)
+
+def tovariable(array):
+  if type(array) == np.ndarray:
+    array = totorch(array)
+  return Variable(array)
+
+def extrinsic_mat_to_pose(mat):
+  return 1
+
+def pose_to_extrinsic(mat):
+  return 1
+
 def subset_frames(get_dataset=False, fps=4):
-  from data.movie_sequence_dataset import MovieSequenceDataset
+  from data.datagenerators.movie_sequence_dataset import MovieSequenceDataset
   selected_movies = ['pulp_fiction_1994']
   selected_frames =[]
   #refered as indexes at 4 fps
