@@ -15,8 +15,9 @@ import numpy as np
 
 from skvideo.io import FFmpegWriter as VideoWriter
 import tempfile
+from PIL import Image
+import datetime
 import json
-
 
 def select_gpus(gpus_arg):
   #so that default gpu is one of the selected, instead of 0
@@ -27,6 +28,9 @@ def select_gpus(gpus_arg):
     os.environ['CUDA_VISIBLE_DEVICES'] = ''
     gpus = []
   return gpus
+
+def gettimedatestring():
+  return datetime.datetime.now().strftime("%m-%d-%H:%M")
 
 def read_text_file_lines(filename):
   lines = list()
@@ -79,9 +83,22 @@ if not is_local_execution():
 
 from PIL import Image
 
-vis = visdom.Visdom(port=12890)
+global_vis = visdom.Visdom(port=12890)
 
-def imshow(im, path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, title=None, window=None, env=None, fps=None):
+def scale_image_biggest_dim(im, biggest_dim):
+  #if it is a video, resize inside the video
+  if im.shape[1] > im.shape[2]:
+    scale = im.shape[1] / (biggest_dim + 0.0)
+  else:
+    scale = im.shape[2] / (biggest_dim + 0.0)
+  target_imshape = (int(im.shape[1]/scale), int(im.shape[2]/scale))
+  if im.shape[0] == 1:
+    im = myimresize(im[0], target_shape=(target_imshape))[None,:,:]
+  else:
+    im = myimresize(im, target_shape=target_imshape)
+  return im
+
+def imshow(im, path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, title=None, window=None, env=None, fps=None, vis=None):
   im = tonumpy(im)
   if type(im) == 'string':
     #it is a path
@@ -97,30 +114,22 @@ def imshow(im, path=None, biggest_dim=None, normalize_image=True, max_batch_disp
   if len(im.shape) == 2:
     #expand first if 1 channel image
     im = im[None,:,:]
-  if not biggest_dim is None:
-    if im.shape[1] > im.shape[2]:
-      scale = im.shape[1] / (biggest_dim + 0.0)
-    else:
-      scale = im.shape[2] / (biggest_dim + 0.0)
-    target_imshape = (int(im.shape[1]/scale), int(im.shape[2]/scale))
-    if im.shape[0] == 1:
-      im = myimresize(im[0], target_shape=(target_imshape))[None,:,:]
-    else:
-      im = myimresize(im, target_shape=target_imshape)
+  if not biggest_dim is None and len(im.shape) == 3:
+    im = scale_image_biggest_dim(im, biggest_dim)
   if normalize_image and im.max() != im.min():
     im = (im - im.min())/(im.max() - im.min())
   if path is None:
     if len(im.shape) == 4:
-      vidshow_vis(im, title=title, window=window, env=env)
+      vidshow_vis(im, title=title, window=window, env=env, vis=vis, biggest_dim=biggest_dim)
     else:
-      imshow_vis(im, title=title, window=window, env=env)
+      imshow_vis(im, title=title, window=window, env=env, vis=vis)
   else:
     if len(im.shape) == 4:
-      make_gif(im, path=path, fps=fps)
+      make_gif(im, path=path, fps=fps, biggest_dim=biggest_dim)
     else:
       imshow_matplotlib(im, path)
 
-def make_gif(ims, path, fps=None):
+def make_gif(ims, path, fps=None, biggest_dim=None):
   if ims.dtype != 'uint8':
     ims = np.array(ims*255, dtype='uint8')
   if ims.shape[1] in [1,3]:
@@ -130,13 +139,18 @@ def make_gif(ims, path, fps=None):
   with imageio.get_writer(path) as gif_writer:
     for k in range(ims.shape[0]):
       #imsave(ims[k].mean()
-      gif_writer.append_data(ims[k])
+      if biggest_dim is None:
+        actual_im = ims[k]
+      else:
+        actual_im = np.transpose(scale_image_biggest_dim(np.transpose(ims[k]), biggest_dim))
+      gif_writer.append_data(actual_im)
   if not fps is None:
     gif = imageio.mimread(path)
     imageio.mimsave(path, gif, fps=fps)
 
-
-def imshow_vis(im, title=None, window=None, env=None):
+def imshow_vis(im, title=None, window=None, env=None, vis=None):
+  if vis is None:
+    vis = global_vis
   opts = dict()
   if not title is None:
     opts['caption'] = title
@@ -147,10 +161,13 @@ def imshow_vis(im, title=None, window=None, env=None):
     window = title
   vis.image(im, win=window, opts=opts, env=env)
 
-def vidshow_vis(video, title=None, window=None, env=None):
+def vidshow_vis(video, title=None, window=None, env=None, vis=None, biggest_dim=None):
+  if vis is None:
+    vis = global_vis
   if video.shape[1] == 1 or video.shape[1] == 3:
     video = video.transpose(0,2,3,1)
-  if video.shape[1] == 1:
+  if video.shape[-1] == 1:
+    #if one channel, replicate it
     video = np.tile(video,(1,1,1,3))
   opts = dict()
   if not title is None:
@@ -164,10 +181,11 @@ def vidshow_vis(video, title=None, window=None, env=None):
   videofile = '/tmp/%s.ogv' % next(tempfile._get_candidate_names())
   writer = VideoWriter(videofile)
   for i in range(video.shape[0]):
-    im = Image.fromarray(np.transpose(video[i],(2,0,1)))
-    # performs a rescale, that fits inside the (720,720)
-    im.thumbnail((300, 300), Image.ANTIALIAS)
-    writer.writeFrame(np.array(im))
+    if biggest_dim is None:
+      actual_frame = video[i]
+    else:
+      actual_frame = np.transpose(scale_image_biggest_dim(np.transpose(video[i]), biggest_dim))
+    writer.writeFrame(actual_frame)
   writer.close()
   vis.video(videofile=videofile, win=window, opts=opts, env=env)
 
