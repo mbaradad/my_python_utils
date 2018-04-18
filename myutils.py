@@ -9,14 +9,16 @@ from scipy import misc
 from skimage.transform import resize
 
 import imageio
-import cv2
-import numpy as np
 import torch
 from torch.autograd import Variable
+import cv2
+import numpy as np
+
 from skvideo.io import FFmpegWriter as VideoWriter
 import tempfile
 from PIL import Image
 import datetime
+import json
 
 def select_gpus(gpus_arg):
   #so that default gpu is one of the selected, instead of 0
@@ -265,6 +267,8 @@ def create_flow_image(flow):
   return rgb
 
 def undo_img_normalization(img, dataset='movies'):
+  if img.shape[0] == 1:
+    return img
   from data.movie_sequence_dataset import MovieSequenceDataset
   if dataset != 'movies':
     raise Exception('Not implemented!')
@@ -332,7 +336,7 @@ def get_essential_matrix(src_pts, tgt_pts, K):
 
   return E, R, t
 
-def get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None):
+def get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None, N_MATCHES=100):
   sift = cv2.xfeatures2d.SIFT_create()
   ref_kp, ref_desc = sift.detectAndCompute(gray_ref_img, None)
   tgt_kp, tgt_desc = sift.detectAndCompute(gray_tgt_img, None)
@@ -341,7 +345,6 @@ def get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None):
 
   matches = bf.match(ref_desc, tgt_desc)
   # draw the top N matches
-  N_MATCHES = 100
   if mask_ref_and_target is None:
     # Sort the matches in the order of their distance.
     matches = sorted(matches, key=lambda x: x.distance)
@@ -364,16 +367,24 @@ def get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None):
 
   return src_pts, dst_pts, ref_kp, tgt_kp, matches
 
-def compute_sift_image(ref_img, tgt_img, intrinsics, mask_ref_and_target=None, make_plots=True):
-  env = 'sift' + '_masked' if  not mask_ref_and_target is None else ''
+def compute_sift_image(ref_img, tgt_img, intrinsics, mask_ref_and_target=None, make_plots=True, N_MATCHES=100, env=None):
+  if env is None:
+    env = 'sift' + '_masked' if  not mask_ref_and_target is None else ''
   if ref_img.shape[0] in [1,3]:
     ref_img = np.transpose(ref_img, (1,2,0))
   if tgt_img.shape[0] in [1, 3]:
     tgt_img = np.transpose(tgt_img, (1,2,0))
-  gray_ref_img = cv2.cvtColor(ref_img, cv2.COLOR_BGR2GRAY)
-  gray_tgt_img = cv2.cvtColor(tgt_img, cv2.COLOR_BGR2GRAY)
+  if len(ref_img.shape) == 3 and ref_img.shape[-1] == 3:
+    gray_ref_img = cv2.cvtColor(ref_img, cv2.COLOR_BGR2GRAY)
+    gray_tgt_img = cv2.cvtColor(tgt_img, cv2.COLOR_BGR2GRAY)
+  else:
+    gray_ref_img = ref_img
+    gray_tgt_img = tgt_img
+  if len(ref_img.shape) == 2:
+    ref_img = ref_img[:,:,None]
+    tgt_img = tgt_img[:, :, None]
 
-  src_pts, dst_pts, ref_kp, tgt_kp, matches = get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None)
+  src_pts, dst_pts, ref_kp, tgt_kp, matches = get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None, N_MATCHES=N_MATCHES)
   match_img = cv2.drawMatches(
     gray_ref_img, ref_kp,
     gray_tgt_img, tgt_kp,
@@ -387,7 +398,7 @@ def compute_sift_image(ref_img, tgt_img, intrinsics, mask_ref_and_target=None, m
   h, w = ref_img.shape[:2]
   pts = np.float32([[0, 0], [0, h - 1], [w - 1, h - 1], [w - 1, 0]]).reshape(-1, 1, 2)
   dst = cv2.perspectiveTransform(pts, M)
-  warped_image = cv2.warpPerspective(tgt_img, np.linalg.inv(M), (tgt_img.shape[1], tgt_img.shape[0]))
+  #warped_image = cv2.warpPerspective(tgt_img, np.linalg.inv(M), (tgt_img.shape[1], tgt_img.shape[0]))
 
   tgt_img_with_homo = tgt_img.copy()
   tgt_img_with_homo[:,:,0] = cv2.polylines(tgt_img[:,:,0], [np.int32(dst)], True, 255, 3, cv2.LINE_AA)
@@ -404,10 +415,8 @@ def compute_sift_image(ref_img, tgt_img, intrinsics, mask_ref_and_target=None, m
       imshow(mask_ref_and_target[0], title='ref_img_mask', window='ref_img_mask', env=env)
       imshow(mask_ref_and_target[1], title='tgt_img_mask', window='tgt_img_mask', env=env)
 
-    imshow(warped_image/255.0, title='warped_target', window='warped_target', env=env)
-
+    #imshow(warped_image/255.0, title='warped_target', window='warped_target', env=env)
     #print t
-
     imshow(ref_img / 255.0, title='ref_img', window='ref_img', env=env)
     imshow(cv2.drawKeypoints(gray_ref_img, ref_kp, ref_img.copy()) / 255.0, title='sift_ref_features',
            window='sift_ref_features', env=env)
@@ -417,7 +426,7 @@ def compute_sift_image(ref_img, tgt_img, intrinsics, mask_ref_and_target=None, m
     imshow(match_img / 255.0, title='sift_matches', window='sift_matches', env=env)
 
   print t[-1]
-  return E, R, t
+  return E, R, t, src_pts, dst_pts
 
 
 def get_unknown_intrinsics(im_h, im_w):
@@ -428,7 +437,9 @@ def get_unknown_intrinsics(im_h, im_w):
                          [0,         0, 1.000000e+00]], dtype='float32')
   return intrinsics
 
+
 def get_kitti_simulated_intrinsics(im_h, im_w):
+
   KITTI_DATASET_CAM_F = 7.215377e+02
   KITTI_DATASET_IMG_W = 1242
   KITTI_DATASET_IMG_H = 375
@@ -439,6 +450,25 @@ def get_kitti_simulated_intrinsics(im_h, im_w):
                          [0, dataset_f, offset_y],
                          [0,         0, 1.000000e+00]], dtype='float32')
   return intrinsics
+
+
+def get_simulated_intrinsics(im_h, im_w):
+  #TODO: maybe also learn f, which should be more robust with 3d movies
+  offset_x = (im_w - 1.0) / 2
+  offset_y = (im_h - 1.0) / 2
+  #same as OpensFM prior focal length
+  f = 0.85*im_w
+  intrinsics = np.array([[f, 0, offset_x],
+                         [0, f, offset_y],
+                         [0,         0, 1.000000e+00]], dtype='float32')
+  return intrinsics
+
+def load_json(file_name):
+  with open(file_name) as handle:
+    return json.loads(handle.read())
+def dump_json(json_dict, filename):
+  with open(filename, 'w') as fp:
+    json.dump(json_dict, fp, indent=4)
 
 def np_to_tensor(np_obj):
   return torch.FloatTensor(np_obj)
