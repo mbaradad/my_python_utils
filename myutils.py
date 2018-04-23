@@ -98,6 +98,11 @@ def scale_image_biggest_dim(im, biggest_dim):
     im = myimresize(im, target_shape=target_imshape)
   return im
 
+def visdom_histogram(array, env, win, vis=None):
+  if vis is None:
+    vis = global_vis
+  vis.histogram(array, env=env, win=win)
+
 def imshow(im, path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, title=None, window=None, env=None, fps=None, vis=None):
   im = tonumpy(im)
   if type(im) == 'string':
@@ -108,6 +113,8 @@ def imshow(im, path=None, biggest_dim=None, normalize_image=True, max_batch_disp
     im = im / 255.0
   if len(im.shape) > 4:
     raise Exception('Im has more than 4 dims')
+  if len(im.shape) == 4 and im.shape[0] == 1:
+   im = im[0,:,:,:]
   if len(im.shape) == 3 and im.shape[-1] in [1,3]:
     #put automatically channel first if its last
     im = im.transpose((2,0,1))
