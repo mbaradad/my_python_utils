@@ -1,0 +1,3 @@
+visdom
+skvideo
+scikit-video
