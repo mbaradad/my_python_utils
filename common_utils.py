@@ -108,7 +108,11 @@ def visdom_histogram(array, env, win, title=None, vis=None):
     opt['title'] = title
   vis.histogram(array, env=env, win=win, opts=opt)
 
-def imshow(im, path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, title=None, window=None, env=None, fps=None, vis=None):
+def imshow(im, title=None, path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, window=None, env=None, fps=None, vis=None):
+  if title is None:
+    raise Exception("Imshow error: Title can't be empty!")
+  if window is None:
+    window = title
   im = tonumpy(im)
   if type(im) == 'string':
     #it is a path
@@ -165,7 +169,7 @@ def imshow_vis(im, title=None, window=None, env=None, vis=None):
     vis = global_vis
   opts = dict()
   if not title is None:
-    opts['caption'] = title
+    opts['title'] = title
   if im.dtype is np.uint8:
     im = im/255.0
   vis.win_exists(title)
@@ -322,7 +326,7 @@ def tonumpy(tensor):
     tensor = tensor.data
   if tensor.is_cuda:
     tensor = tensor.cpu()
-  return tensor.numpy()
+  return tensor.detach().numpy()
 
 def totorch(numpy_array):
   return torch.FloatTensor(numpy_array)
@@ -379,7 +383,7 @@ def get_essential_matrix(src_pts, tgt_pts, K):
 
   return E, R, t
 
-def get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None, N_MATCHES=100):
+def get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None, dist_threshold=-1, N_MATCHES=-1):
   sift = cv2.xfeatures2d.SIFT_create()
   ref_kp, ref_desc = sift.detectAndCompute(gray_ref_img, None)
   tgt_kp, tgt_desc = sift.detectAndCompute(gray_tgt_img, None)
@@ -387,6 +391,8 @@ def get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None, N_MAT
   bf = cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)
 
   matches = bf.match(ref_desc, tgt_desc)
+  if dist_threshold > 0:
+    matches = [ m for m in matches if m.distance < dist_threshold]
   # draw the top N matches
   if mask_ref_and_target is None:
     # Sort the matches in the order of their distance.
@@ -410,63 +416,48 @@ def get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None, N_MAT
 
   return src_pts, dst_pts, ref_kp, tgt_kp, matches
 
-def compute_sift_image(ref_img, tgt_img, intrinsics, mask_ref_and_target=None, make_plots=True, N_MATCHES=100, env=None):
+def cv_size(img):
+    return tuple(img.shape[1::-1])
+
+def compute_sift_image(L_img, R_img, mask_ref_and_target=None, make_plots=True, dist_threshold=-1, N_MATCHES=-1, env=None):
   if env is None:
     env = 'sift' + '_masked' if  not mask_ref_and_target is None else ''
-  if ref_img.shape[0] in [1,3]:
-    ref_img = np.transpose(ref_img, (1,2,0))
-  if tgt_img.shape[0] in [1, 3]:
-    tgt_img = np.transpose(tgt_img, (1,2,0))
-  if len(ref_img.shape) == 3 and ref_img.shape[-1] == 3:
-    gray_ref_img = cv2.cvtColor(ref_img, cv2.COLOR_BGR2GRAY)
-    gray_tgt_img = cv2.cvtColor(tgt_img, cv2.COLOR_BGR2GRAY)
+  if L_img.shape[0] in [1, 3]:
+    L_img = np.transpose(L_img, (1, 2, 0))
+  if R_img.shape[0] in [1, 3]:
+    R_img = np.transpose(R_img, (1, 2, 0))
+  if len(L_img.shape) == 3 and L_img.shape[-1] == 3:
+    gray_L_img = cv2.cvtColor(L_img, cv2.COLOR_BGR2GRAY)
+    gray_R_img = cv2.cvtColor(R_img, cv2.COLOR_BGR2GRAY)
   else:
-    gray_ref_img = ref_img
-    gray_tgt_img = tgt_img
-  if len(ref_img.shape) == 2:
-    ref_img = ref_img[:,:,None]
-    tgt_img = tgt_img[:, :, None]
+    gray_L_img = L_img
+    gray_R_img = R_img
+  if len(L_img.shape) == 2:
+    L_img = L_img[:, :, None]
+    R_img = R_img[:, :, None]
 
-  src_pts, dst_pts, ref_kp, tgt_kp, matches = get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None, N_MATCHES=N_MATCHES)
-  match_img = cv2.drawMatches(
-    gray_ref_img, ref_kp,
-    gray_tgt_img, tgt_kp,
-    matches, gray_tgt_img.copy(), flags=0)
-
-  E, R, t = get_essential_matrix(src_pts, dst_pts, intrinsics)
-
-  M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-  matchesMask = mask.ravel().tolist()
-
-  h, w = ref_img.shape[:2]
-  pts = np.float32([[0, 0], [0, h - 1], [w - 1, h - 1], [w - 1, 0]]).reshape(-1, 1, 2)
-  dst = cv2.perspectiveTransform(pts, M)
-  #warped_image = cv2.warpPerspective(tgt_img, np.linalg.inv(M), (tgt_img.shape[1], tgt_img.shape[0]))
-
-  tgt_img_with_homo = tgt_img.copy()
-  tgt_img_with_homo[:,:,0] = cv2.polylines(tgt_img[:,:,0], [np.int32(dst)], True, 255, 3, cv2.LINE_AA)
-
-  draw_params = dict(matchColor=(0, 255, 0),  # draw matches in green color
-                     singlePointColor=None,
-                     matchesMask=matchesMask,  # draw only inliers
-                     flags=2)
-
-  img3 = cv2.drawMatches(ref_img, ref_kp, tgt_img, tgt_kp, matches, None, **draw_params)
-
+  L_pts, R_pts, ref_kp, tgt_kp, matches = get_sift_matches(gray_L_img, gray_R_img, mask_ref_and_target=None, dist_threshold=dist_threshold, N_MATCHES=N_MATCHES)
   if make_plots:
-    if not mask_ref_and_target is None:
-      imshow(mask_ref_and_target[0], title='ref_img_mask', window='ref_img_mask', env=env)
-      imshow(mask_ref_and_target[1], title='tgt_img_mask', window='tgt_img_mask', env=env)
+    m = matches
+    match_img = cv2.drawMatches(
+      gray_L_img, ref_kp,
+      gray_R_img, tgt_kp,
+      m, gray_R_img.copy(), flags=0)
+    imshow(match_img / 255.0, title='all_sift_matches', env=env)
 
-    imshow(ref_img / 255.0, title='ref_img', window='ref_img', env=env)
-    imshow(cv2.drawKeypoints(gray_ref_img, ref_kp, ref_img.copy()) / 255.0, title='sift_ref_features',
-           window='sift_ref_features', env=env)
-    imshow(cv2.drawKeypoints(gray_tgt_img, tgt_kp, tgt_img.copy()) / 255.0, title='sift_tgt_features',
-         window='sift_tgt_features', env=env)
-    imshow(img3 / 255.0, title='transformed', window='transformed', env=env)
-    imshow(match_img / 255.0, title='sift_matches', window='sift_matches', env=env)
+    match_img = cv2.drawMatches(
+      gray_L_img, ref_kp,
+      gray_R_img, tgt_kp,
+      m[:10], gray_R_img.copy(), flags=0)
+    imshow(match_img / 255.0, title='top_10_sift_matches', env=env)
 
-  return E, R, t, src_pts, dst_pts
+    match_img = cv2.drawMatches(
+      gray_L_img, ref_kp,
+      gray_R_img, tgt_kp,
+      m[-10:], gray_R_img.copy(), flags=0)
+    imshow(match_img / 255.0, title='bottom_10_sift_matches', env=env)
+
+  return L_pts, R_pts
 
 
 def get_unknown_intrinsics(im_h, im_w):
