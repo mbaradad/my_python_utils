@@ -108,16 +108,19 @@ def visdom_histogram(array, env, win, title=None, vis=None):
     opt['title'] = title
   vis.histogram(array, env=env, win=win, opts=opt)
 
-def imshow(im, title=None, path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, window=None, env=None, fps=2, vis=None):
+def imshow(im, title=None, path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, window=None, env=None, fps=None, vis=None, add_ranges=False):
   if title is None:
     raise Exception("Imshow error: Title can't be empty!")
   if window is None:
     window = title
   im = tonumpy(im)
+  postfix = ''
   if type(im) == 'string':
     #it is a path
     pic = Image.open(im)
     im = np.array(pic, dtype='float32')
+  if add_ranges:
+    postfix = '_max_{:.2f}_min_{:.2f}'.format(im.max(), im.min())
   if im.dtype == 'uint8':
     im = im / 255.0
   if len(im.shape) > 4:
@@ -135,10 +138,12 @@ def imshow(im, title=None, path=None, biggest_dim=None, normalize_image=True, ma
   if normalize_image and im.max() != im.min():
     im = (im - im.min())/(im.max() - im.min())
   if path is None:
+    if window is None:
+      window = title
     if len(im.shape) == 4:
       vidshow_vis(im, title=title, window=window, env=env, vis=vis, biggest_dim=biggest_dim, fps=fps)
     else:
-      imshow_vis(im, title=title, window=window, env=env, vis=vis)
+      imshow_vis(im, title=title + postfix, window=window, env=env, vis=vis)
   else:
     if len(im.shape) == 4:
       make_gif(im, path=path, fps=fps, biggest_dim=biggest_dim)
@@ -173,8 +178,6 @@ def imshow_vis(im, title=None, window=None, env=None, vis=None):
   if im.dtype is np.uint8:
     im = im/255.0
   vis.win_exists(title)
-  if window is None:
-    window = title
   vis.image(im, win=window, opts=opts, env=env)
 
 
