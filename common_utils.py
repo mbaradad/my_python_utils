@@ -1,6 +1,6 @@
 #force 3.5 div to make it compatible with both 2.7 and 3.5
 from __future__ import division
-
+#TODO: move imports to functions, to make loading faster
 try:
   import cPickle as pickle
 except:
@@ -108,7 +108,7 @@ def visdom_histogram(array, env, win, title=None, vis=None):
     opt['title'] = title
   vis.histogram(array, env=env, win=win, opts=opt)
 
-def imshow(im, title=None, path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, window=None, env=None, fps=None, vis=None):
+def imshow(im, title=None, path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, window=None, env=None, fps=2, vis=None):
   if title is None:
     raise Exception("Imshow error: Title can't be empty!")
   if window is None:
@@ -136,7 +136,7 @@ def imshow(im, title=None, path=None, biggest_dim=None, normalize_image=True, ma
     im = (im - im.min())/(im.max() - im.min())
   if path is None:
     if len(im.shape) == 4:
-      vidshow_vis(im, title=title, window=window, env=env, vis=vis, biggest_dim=biggest_dim)
+      vidshow_vis(im, title=title, window=window, env=env, vis=vis, biggest_dim=biggest_dim, fps=fps)
     else:
       imshow_vis(im, title=title, window=window, env=env, vis=vis)
   else:
@@ -177,7 +177,22 @@ def imshow_vis(im, title=None, window=None, env=None, vis=None):
     window = title
   vis.image(im, win=window, opts=opts, env=env)
 
-def vidshow_vis(video, title=None, window=None, env=None, vis=None, biggest_dim=None):
+
+def visdom_dict(dict_to_plot, title=None, window=None, env=None, vis=None):
+  if vis is None:
+    vis = global_vis
+  opts = dict()
+  if not title is None:
+    opts['title'] = title
+  vis.win_exists(title)
+  if window is None:
+    window = title
+  properties = []
+  for k in dict_to_plot.keys():
+    properties.append({'type': 'text', 'name': str(k), 'value': str(dict_to_plot[k])})
+  vis.properties(properties, win=window, opts=opts, env=env)
+
+def vidshow_vis(video, title=None, window=None, env=None, vis=None, biggest_dim=None, fps=10):
   if vis is None:
     vis = global_vis
   if video.shape[1] == 1 or video.shape[1] == 3:
@@ -188,6 +203,7 @@ def vidshow_vis(video, title=None, window=None, env=None, vis=None, biggest_dim=
   opts = dict()
   if not title is None:
     opts['caption'] = title
+    opts['fps'] = fps
   if not video.dtype is np.uint8:
     video = np.array(video * 255, dtype='uint8')
   vis.win_exists(title)
@@ -195,7 +211,7 @@ def vidshow_vis(video, title=None, window=None, env=None, vis=None, biggest_dim=
     window = title
 
   videofile = '/tmp/%s.ogv' % next(tempfile._get_candidate_names())
-  writer = VideoWriter(videofile)
+  writer = VideoWriter(videofile, inputdict={'-r': str(fps)})
   for i in range(video.shape[0]):
     if biggest_dim is None:
       actual_frame = video[i]
@@ -437,27 +453,37 @@ def compute_sift_image(L_img, R_img, mask_ref_and_target=None, make_plots=True, 
     R_img = R_img[:, :, None]
 
   L_pts, R_pts, ref_kp, tgt_kp, matches = get_sift_matches(gray_L_img, gray_R_img, mask_ref_and_target=None, dist_threshold=dist_threshold, N_MATCHES=N_MATCHES)
+  sim_distances = [m.distance for m in matches]
+
   if make_plots:
-    m = matches
+    less_than_100 = [d for d in sim_distances if d < 100]
+
     match_img = cv2.drawMatches(
       gray_L_img, ref_kp,
       gray_R_img, tgt_kp,
-      m, gray_R_img.copy(), flags=0)
+      matches, gray_R_img.copy(), flags=0)
     imshow(match_img / 255.0, title='all_sift_matches', env=env)
 
     match_img = cv2.drawMatches(
       gray_L_img, ref_kp,
       gray_R_img, tgt_kp,
-      m[:10], gray_R_img.copy(), flags=0)
+      matches[:len(less_than_100)], gray_R_img.copy(), flags=0)
+    imshow(match_img / 255.0, title='less_than_100_dist_sift_matches', env=env)
+
+
+    match_img = cv2.drawMatches(
+      gray_L_img, ref_kp,
+      gray_R_img, tgt_kp,
+      matches[:10], gray_R_img.copy(), flags=0)
     imshow(match_img / 255.0, title='top_10_sift_matches', env=env)
 
     match_img = cv2.drawMatches(
       gray_L_img, ref_kp,
       gray_R_img, tgt_kp,
-      m[-10:], gray_R_img.copy(), flags=0)
+      matches[-10:], gray_R_img.copy(), flags=0)
     imshow(match_img / 255.0, title='bottom_10_sift_matches', env=env)
 
-  return L_pts, R_pts
+  return L_pts, R_pts, sim_distances
 
 
 def get_unknown_intrinsics(im_h, im_w):
