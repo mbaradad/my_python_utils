@@ -6,15 +6,13 @@ try:
 except:
   import _pickle as cPickle
 import os
+import cv2
 
 import argparse
 import matplotlib
 if not 'NO_VISDOM' in os.environ.keys():
   import visdom
-  global_vis = visdom.Visdom(port=12890, server='http://vision02')
-
-import png
-import numpy as np
+  global_vis = visdom.Visdom(port=12890, server='http://vision02', use_incoming_socket=False)
 
 from imageio import imwrite
 from scipy import misc
@@ -23,7 +21,6 @@ from skimage.transform import resize
 import imageio
 import torch
 from torch.autograd import Variable
-import cv2
 import numpy as np
 
 from skvideo.io import FFmpegWriter as VideoWriter
@@ -44,6 +41,7 @@ def select_gpus(gpus_arg):
   else:
     os.environ['CUDA_VISIBLE_DEVICES'] = ''
     gpus = []
+  print 'CUDA_VISIBLE_DEVICES={}'.format(os.environ['CUDA_VISIBLE_DEVICES'])
   return gpus
 
 def gettimedatestring():
@@ -159,12 +157,14 @@ def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True, 
     raise Exception("Imshow error: Title can't be empty!")
   if window is None:
     window = title
-  im = tonumpy(im)
-  postfix = ''
   if type(im) == 'string':
     #it is a path
     pic = Image.open(im)
     im = np.array(pic, dtype='float32')
+  im = tonumpy(im)
+  postfix = ''
+  if im.dtype == np.bool:
+    im = im*1.0
   if add_ranges:
     postfix = '_max_{:.2f}_min_{:.2f}'.format(im.max(), im.min())
   if im.dtype == 'uint8':
@@ -284,7 +284,8 @@ def create_plane_pointcloud_coords(center, normal, extent, samples, color=(255,2
   colors = np.array([color]*coords.shape[0])
   return coords, colors
 
-def show_pointcloud(coords, colors=None, title='none', win=None, env=None, markersize=5, subsample=-1, force_aspect_ratio=True, valid_mask=None):
+def show_pointcloud(coords, colors=None, title='none', win=None, env=None, markersize=5, subsample=-1,
+                    force_aspect_ratio=True, valid_mask=None, nice_rotation=True):
   if colors is None:
     colors = np.ones(coords.shape)
   if type(coords) is list:
@@ -303,25 +304,38 @@ def show_pointcloud(coords, colors=None, title='none', win=None, env=None, marke
     win = title
   if force_aspect_ratio:
     #add coords on a bounding box, to force
-    max_coord = np.abs(coords).max()
+    x_max, y_max, z_max = coords.max(0)
+    x_min, y_min, z_min = coords.min(0)
+    x_dist_bbox = (x_max - x_min)
+    y_dist_bbox = (y_max - y_min)
+    z_dist_bbox = (z_max - z_min)
+    bbox_center = np.array((x_dist_bbox/2 + x_min, y_dist_bbox/2 + y_min, z_dist_bbox/2 + z_min))
+    max_bbox_dist = np.array((x_dist_bbox, y_dist_bbox, z_dist_bbox)).max()/2
     bbox_coords = list()
     for to_bits in range(8):
       i = int(to_bits / 4)
       j = int(to_bits / 2)
       k = int(to_bits % 2)
-      bbox_coords.append((max_coord*(-1)**i, max_coord*(-1)**j, max_coord*(-1)**k))
+      bbox_coords.append(bbox_center + (max_bbox_dist*(-1)**i, max_bbox_dist*(-1)**j, max_bbox_dist*(-1)**k))
     bbox_colors = np.array([(255,255,255)]*8)
     bbox_coords = np.array(bbox_coords)
     coords = np.concatenate((coords, bbox_coords), axis=0)
     colors = np.concatenate((colors, bbox_colors), axis=0)
 
-  global_vis.scatter(coords, env=env, win=win,
+  if nice_rotation:
+    final_coords = np.matmul(xrotation(np.deg2rad(90)), coords.transpose()).transpose()
+    final_coords = np.matmul(yrotation(np.deg2rad(180)), final_coords.transpose()).transpose()
+  else:
+    final_coords = coords
+
+  global_vis.scatter(final_coords, env=env, win=win,
               opts={'markercolor':colors,
                     'markersize' : markersize,
-                    'webgl': False,
+                    'webgl': True,
                     'markersymbol': 'dot',
                     'title':title,
-                    'name': 'scatter'})
+                    'name': 'scatter',
+                    })
 
   '''
   verts = list()
@@ -754,6 +768,20 @@ def superpixels_image(image, num_segments=50):
   imshow(segments, title='segments')
   return segments
 
+def xrotation(th):
+  c = np.cos(th)
+  s = np.sin(th)
+  return np.array([[1, 0, 0], [0, c, s], [0, -s, c]])
+
+def yrotation(th):
+  c = np.cos(th)
+  s = np.sin(th)
+  return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+
+def zrotation(th):
+  c = np.cos(th)
+  s = np.sin(th)
+  return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
 
 def edges_semantic(semantic_instance_map):
   sk_edges = feature.canny(semantic_instance_map, sigma=1) * 1.0
