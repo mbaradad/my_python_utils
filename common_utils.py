@@ -4,34 +4,40 @@ from __future__ import division
 try:
   import cPickle as pickle
 except:
-  import _pickle as cPickle
+  import _pickle as pickle
 import os
 import cv2
 
+import glob
+import shutil
+
+import seaborn as sns
+import warnings
+import random
 import argparse
 import matplotlib
-if not 'NO_VISDOM' in os.environ.keys():
-  import visdom
-  global_vis = visdom.Visdom(port=12890, server='http://vision02', use_incoming_socket=False)
+from my_python_utils.visdom_visualizations import *
 
 from imageio import imwrite
 from scipy import misc
-from skimage.transform import resize
+import struct
 
 import imageio
 import torch
-from torch.autograd import Variable
 import numpy as np
+from PIL import Image, ImageDraw
 
-from skvideo.io import FFmpegWriter as VideoWriter
-import tempfile
-from PIL import Image
 import datetime
 import json
 import difflib
 from skimage import feature
 
 from plyfile import PlyData, PlyElement
+
+import torch.nn.functional as F
+from torch.autograd import Variable
+
+from scipy.linalg import lstsq
 
 def select_gpus(gpus_arg):
   #so that default gpu is one of the selected, instead of 0
@@ -41,15 +47,31 @@ def select_gpus(gpus_arg):
   else:
     os.environ['CUDA_VISIBLE_DEVICES'] = ''
     gpus = []
-  print 'CUDA_VISIBLE_DEVICES={}'.format(os.environ['CUDA_VISIBLE_DEVICES'])
+  print('CUDA_VISIBLE_DEVICES={}'.format(os.environ['CUDA_VISIBLE_DEVICES']))
   return gpus
 
 def gettimedatestring():
   return datetime.datetime.now().strftime("%m-%d-%H:%M")
 
+
+from multiprocess import Lock
+global lock
+lock = Lock()
+def thread_safe_read_text_file_lines(filename):
+  global lock
+  lock.acquire()
+  try:
+    lines = list()
+    with open(filename, 'r') as f:
+      for line in f:
+        lines.append(line.replace('\n',''))
+  finally:
+    lock.release()
+  return lines
+
 def read_text_file_lines(filename):
   lines = list()
-  with open(filename) as f:
+  with open(filename, 'r') as f:
     for line in f:
       lines.append(line.replace('\n',''))
   return lines
@@ -92,7 +114,9 @@ def is_headless_execution():
   #if there is a display, we are running locally
   return 'DISPLAY' in os.environ.keys()
 if not is_headless_execution():
-  matplotlib.use('Agg')
+  with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    matplotlib.use('Agg')
 
 
 def png_16_bits_imread(file):
@@ -104,30 +128,139 @@ def cv2_imread(file, return_BGR=False):
     return im
   return im[::-1, :, :]
 
-def scale_image_biggest_dim(im, biggest_dim):
-  #if it is a video, resize inside the video
-  if im.shape[1] > im.shape[2]:
-    scale = im.shape[1] / (biggest_dim + 0.0)
-  else:
-    scale = im.shape[2] / (biggest_dim + 0.0)
-  target_imshape = (int(im.shape[1]/scale), int(im.shape[2]/scale))
-  if im.shape[0] == 1:
-    im = myimresize(im[0], target_shape=(target_imshape))[None,:,:]
-  else:
-    im = myimresize(im, target_shape=target_imshape)
-  return im
+def cv2_imwrite(im, file, rgb=True):
+  im = im.transpose(1, 2, 0)
+  imwrite(file, im)
 
-def visdom_histogram(array, env, win, title=None, vis=None):
+
+
+def visdom_histogram(array, env='PYCHARM_RUN', win=None, title=None, vis=None):
   if vis is None:
     vis = global_vis
   opt = dict()
   if not title is None:
     opt['title'] = title
+  else:
+    opt['title'] = str(win)
+  if win is None:
+    win = title
   vis.histogram(array, env=env, win=win, opts=opt)
+
+def visdom_bar_plot(array, rownames=None, env='PYCHARM_RUN', win=None, title=None, vis=None):
+  if vis is None:
+    vis = global_vis
+  opt = dict()
+  if not title is None:
+    opt['title'] = title
+  else:
+    opt['title'] = str(win)
+  if win is None:
+    win = title
+  if not rownames is None:
+    opt['rownames'] = rownames
+  vis.bar(array, env=env, win=win, opts=opt)
+
+
+def visdom_boxplot(array, env='main', win='test', title=None, vis=None):
+  if vis is None:
+    vis = global_vis
+  opt = dict()
+  if not title is None:
+    opt['title'] = title
+  else:
+    opt['title'] = str(win)
+  vis.boxplot(array, env=env, win=win, opts=opt)
 
 def touch(fname, times=None):
   with open(fname, 'a'):
     os.utime(fname, times)
+
+
+def get_image_size_fast_jpg(filename):
+  """"This function prints the resolution of the jpeg image file passed into it"""
+
+  # open image for reading in binary mode
+  with open(filename, 'rb') as img_file:
+    # height of image (in 2 bytes) is at 164th position
+    img_file.seek(163)
+
+    # read the 2 bytes
+    a = img_file.read(2)
+
+    # calculate height
+    height = (a[0] << 8) + a[1]
+
+    # next 2 bytes is width
+    a = img_file.read(2)
+
+    # calculate width
+    width = (a[0] << 8) + a[1]
+  return width, height
+
+
+
+class UnknownImageFormat(Exception):
+  pass
+
+def get_image_size_fast_png(file_path):
+  """
+  Return (width, height) for a given img file content - no external
+  dependencies except the os and struct modules from core
+  """
+  size = os.path.getsize(file_path)
+
+  with open(file_path) as input:
+    height = -1
+    width = -1
+    data = input.read(25)
+
+    if (size >= 10) and data[:6] in ('GIF87a', 'GIF89a'):
+      # GIFs
+      w, h = struct.unpack("<HH", data[6:10])
+      width = int(w)
+      height = int(h)
+    elif ((size >= 24) and data.startswith('\211PNG\r\n\032\n')
+          and (data[12:16] == 'IHDR')):
+      # PNGs
+      w, h = struct.unpack(">LL", data[16:24])
+      width = int(w)
+      height = int(h)
+    elif (size >= 16) and data.startswith('\211PNG\r\n\032\n'):
+      # older PNGs?
+      w, h = struct.unpack(">LL", data[8:16])
+      width = int(w)
+      height = int(h)
+    elif (size >= 2) and data.startswith('\377\330'):
+      # JPEG
+      msg = " raised while trying to decode as JPEG."
+      input.seek(0)
+      input.read(2)
+      b = input.read(1)
+      try:
+        while (b and ord(b) != 0xDA):
+          while (ord(b) != 0xFF): b = input.read(1)
+          while (ord(b) == 0xFF): b = input.read(1)
+          if (ord(b) >= 0xC0 and ord(b) <= 0xC3):
+            input.read(3)
+            h, w = struct.unpack(">HH", input.read(4))
+            break
+          else:
+            input.read(int(struct.unpack(">H", input.read(2))[0]) - 2)
+          b = input.read(1)
+        width = int(w)
+        height = int(h)
+      except struct.error:
+        raise UnknownImageFormat("StructError" + msg)
+      except ValueError:
+        raise UnknownImageFormat("ValueError" + msg)
+      except Exception as e:
+        raise UnknownImageFormat(e.__class__.__name__ + msg)
+    else:
+      raise UnknownImageFormat(
+        "Sorry, don't know how to get information from this file."
+      )
+
+  return width, height
 
 def tile_images(imgs, tiles, tile_size):
   final_img = np.zeros((3, tiles[0]*tile_size[0], tiles[1]*tile_size[1]))
@@ -144,6 +277,11 @@ def tile_images(imgs, tiles, tile_size):
       break
   return final_img
 
+def str2intlist(v):
+ if len(v) == 0:
+   return []
+ return [int(k) for k in v.split(',')]
+
 def str2bool(v):
   if v.lower() in ('yes', 'true', 't', 'y', '1'):
     return True
@@ -152,9 +290,50 @@ def str2bool(v):
   else:
     raise argparse.ArgumentTypeError('Boolean value expected.')
 
-def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, window=None, env='main', fps=None, vis=None, add_ranges=False):
-  if title is None:
-    raise Exception("Imshow error: Title can't be empty!")
+def add_arrow(im, origin, end, color=(255,0,0)):
+  im = Image.fromarray(im.transpose())
+  draw = ImageDraw.Draw(im)
+
+  draw.line((origin[0], origin[1], end[0], end[1]), fill=color)
+
+  return np.array(im).transpose()
+
+def add_2d_bbox(im, min_corner_xy, max_corner_xy, color):
+  im = Image.fromarray(im.transpose())
+  draw = ImageDraw.Draw(im)
+
+  draw.line((min_corner_xy[0], min_corner_xy[1], min_corner_xy[0], max_corner_xy[1]), fill=color)
+  draw.line((min_corner_xy[0], min_corner_xy[1], max_corner_xy[0], min_corner_xy[1]), fill=color)
+  draw.line((max_corner_xy[0], min_corner_xy[1], max_corner_xy[0], max_corner_xy[1]), fill=color)
+  draw.line((min_corner_xy[0], max_corner_xy[1], max_corner_xy[0], max_corner_xy[1]), fill=color)
+
+  return np.array(im).transpose()
+
+def add_arrow(im, origin, end, color=(255,0,0)):
+  im = Image.fromarray(im.transpose())
+  draw = ImageDraw.Draw(im)
+
+  draw.line((origin[0], origin[1], end[0], end[1]), fill=color)
+
+  return np.array(im).transpose()
+
+def add_circle(im, centers_x_y, radius=5, color=(255, 0, 0)):
+  im = Image.fromarray(im.transpose())
+  draw = ImageDraw.Draw(im)
+  if not type(centers_x_y) is list:
+    centers_x_y = [centers_x_y]
+  for i in range(len(centers_x_y)):
+    center_x_y = centers_x_y[i]
+    if type(color) is list:
+      actual_color = tuple(color[i])
+    else:
+      actual_color = color
+    draw.ellipse((center_x_y[1] - radius, center_x_y[0] - radius, center_x_y[1] + radius, center_x_y[0] + radius), fill=actual_color)
+
+  return np.array(im).transpose()
+
+
+def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, window=None, env='PYCHARM_RUN', fps=None, vis=None, add_ranges=False):
   if window is None:
     window = title
   if type(im) == 'string':
@@ -215,61 +394,25 @@ def make_gif(ims, path, fps=None, biggest_dim=None):
     gif = imageio.mimread(path)
     imageio.mimsave(path, gif, fps=fps)
 
-def imshow_vis(im, title=None, window=None, env=None, vis=None):
-  if vis is None:
-    vis = global_vis
-  opts = dict()
-  if not title is None:
-    opts['title'] = title
-  if im.dtype is np.uint8:
-    im = im/255.0
-  vis.win_exists(title)
-  vis.image(im, win=window, opts=opts, env=env)
+def interlace(list_of_lists):
+  #all elements same length
+  assert len(set([len(k) for k in list_of_lists])) <= 1
+  interlaced_list = [None]*len(list_of_lists)*len(list_of_lists[0])
+  for k in range(len(list_of_lists)):
+    act_list = list_of_lists[k]
+    interlaced_list[k::len(list_of_lists)] = act_list
+  return interlaced_list
 
-def visdom_dict(dict_to_plot, title=None, window=None, env=None, vis=None):
-  if vis is None:
-    vis = global_vis
-  opts = dict()
-  if not title is None:
-    opts['title'] = title
-  vis.win_exists(title)
-  if window is None:
-    window = title
-  properties = []
-  for k in dict_to_plot.keys():
-    properties.append({'type': 'text', 'name': str(k), 'value': str(dict_to_plot[k])})
-  vis.properties(properties, win=window, opts=opts, env=env)
+def float2str(float, prec=2):
+  return ("{0:." + str(prec) + "f}").format(float)
 
-def vidshow_vis(video, title=None, window=None, env=None, vis=None, biggest_dim=None, fps=10):
-  if vis is None:
-    vis = global_vis
-  if video.shape[1] == 1 or video.shape[1] == 3:
-    video = video.transpose(0,2,3,1)
-  if video.shape[-1] == 1:
-    #if one channel, replicate it
-    video = np.tile(video,(1,1,1,3))
-  opts = dict()
-  if not title is None:
-    opts['caption'] = title
-    opts['fps'] = fps
-  if not video.dtype is np.uint8:
-    video = np.array(video * 255, dtype='uint8')
-  vis.win_exists(title)
-  if window is None:
-    window = title
+def str2img(string_to_print, height=100, width=100):
+  img = Image.new('RGB', (width, height))
+  d = ImageDraw.Draw(img)
+  d.text((20, 20), string_to_print, fill=(255, 255, 255))
+  return np.array(img).transpose((2,0,1))
 
-  videofile = '/tmp/%s.ogv' % next(tempfile._get_candidate_names())
-  writer = VideoWriter(videofile, inputdict={'-r': str(fps)})
-  for i in range(video.shape[0]):
-    if biggest_dim is None:
-      actual_frame = video[i]
-    else:
-      actual_frame = np.transpose(scale_image_biggest_dim(np.transpose(video[i]), biggest_dim))
-    writer.writeFrame(actual_frame)
-  writer.close()
-  vis.video(videofile=videofile, win=window, opts=opts, env=env)
-
-def create_plane_pointcloud_coords(center, normal, extent, samples, color=(255,255,255)):
+def create_plane_pointcloud_coords(center, normal, extent, samples, color=(0,0,0)):
   if normal[0] == 0 and normal[1] == 0:
     #handle special case where the perpendicular cannot have 0 z component
     dir_1 = np.array((0,1,0))
@@ -284,59 +427,256 @@ def create_plane_pointcloud_coords(center, normal, extent, samples, color=(255,2
   colors = np.array([color]*coords.shape[0])
   return coords, colors
 
-def show_pointcloud(coords, colors=None, title='none', win=None, env=None, markersize=5, subsample=-1,
-                    force_aspect_ratio=True, valid_mask=None, nice_rotation=True):
-  if colors is None:
-    colors = np.ones(coords.shape)
+def generate_bbox_coords(min_corner, max_corner, use_max_distance=True):
+  x_min, y_min, z_min = min_corner
+  x_max, y_max, z_max = max_corner
+  x_dist_bbox = (x_max - x_min)
+  y_dist_bbox = (y_max - y_min)
+  z_dist_bbox = (z_max - z_min)
+  bbox_center = np.array((x_dist_bbox / 2 + x_min, y_dist_bbox / 2 + y_min, z_dist_bbox / 2 + z_min))
+  if use_max_distance:
+    max_bbox_dist = np.array((x_dist_bbox, y_dist_bbox, z_dist_bbox)).max() / 2
+  bbox_coords = list()
+  for to_bits in range(8):
+    i = int(to_bits / 4)
+    j = int(to_bits / 2)
+    k = int(to_bits % 2)
+    #first 4 with y negative (floor bbox) final 4 y positive (top bbox)
+    if use_max_distance:
+      bbox_coords.append(bbox_center + (max_bbox_dist * (-1) ** j, max_bbox_dist * (-1) ** (i + 1), max_bbox_dist * (-1) ** k))
+    else:
+      bbox_coords.append(bbox_center + (x_dist_bbox/2.0 * (-1) ** j, y_dist_bbox/2.0 * (-1) ** (i + 1), z_dist_bbox/2.0 * (-1) ** k))
+  return bbox_coords
+
+
+default_side_colors = np.array(sns.color_palette("hls", 12)) * 255.0
+default_corner_colors = (np.array(sns.color_palette("hls", 8)) * 255.0).transpose()
+
+def create_bbox_sides_and_corner_coords(min_corner, max_corner, bbox_center, bbox_rotation_matrix, coords_per_side = 1000, color=None):
+  all_coords = list()
+
+  ones = np.ones((1, coords_per_side))
+  x_range = np.mgrid[min_corner[0]:max_corner[0]:complex(coords_per_side)][None,:]
+  all_coords.append(np.concatenate((x_range, min_corner[1]*ones, min_corner[2]*ones)))
+  all_coords.append(np.concatenate((x_range, min_corner[1]*ones, max_corner[2]*ones)))
+  all_coords.append(np.concatenate((x_range, max_corner[1]*ones, min_corner[2]*ones)))
+  all_coords.append(np.concatenate((x_range, max_corner[1]*ones, max_corner[2]*ones)))
+
+  y_range = np.mgrid[min_corner[1]:max_corner[1]:complex(coords_per_side)][None,:]
+  all_coords.append(np.concatenate((min_corner[0]*ones, y_range, min_corner[2]*ones)))
+  all_coords.append(np.concatenate((min_corner[0]*ones, y_range, max_corner[2]*ones)))
+  all_coords.append(np.concatenate((max_corner[0]*ones, y_range, min_corner[2]*ones)))
+  all_coords.append(np.concatenate((max_corner[0]*ones, y_range, max_corner[2]*ones)))
+
+  z_range = np.mgrid[min_corner[2]:max_corner[2]:complex(coords_per_side)][None,:]
+  all_coords.append(np.concatenate((min_corner[0]*ones, min_corner[1]*ones, z_range)))
+  all_coords.append(np.concatenate((min_corner[0]*ones, max_corner[1]*ones, z_range)))
+  all_coords.append(np.concatenate((max_corner[0]*ones, min_corner[1]*ones, z_range)))
+  all_coords.append(np.concatenate((max_corner[0]*ones, max_corner[1]*ones, z_range)))
+
+  corner_coords = np.array(generate_bbox_coords(min_corner, max_corner, use_max_distance=False)).transpose()
+
+  all_coords = np.array(all_coords)
+  all_coords_sides_shape = all_coords.shape
+
+  all_coords = all_coords.transpose((1,0,2)).reshape(3,-1)
+  if color is None:
+    current_palette = default_side_colors
+    all_colors = np.ones(all_coords_sides_shape)*current_palette[:,:,None]
+    all_colors = all_colors.reshape(3,-1)
+    corner_colors = default_corner_colors
+  else:
+    all_colors = np.ones((all_coords.shape))*np.array(color)[:,None]
+    corner_colors = np.ones((3,8))*np.array(color)[:,None]
+
+
+  all_coords = np.matmul(bbox_rotation_matrix, all_coords)
+  all_coords = all_coords + bbox_center[:,None]
+
+  corner_coords = np.matmul(bbox_rotation_matrix, corner_coords)
+  corner_coords = corner_coords + bbox_center[:, None]
+
+
+  return all_coords, all_colors, corner_coords, corner_colors
+
+
+def add_camera_to_pointcloud(position, rotation, focal_deg_vert, width, height, coords, np_colors=None, n_points_per_side=100, camera_color=(0,0,0)):
+  scale = coords[:,2].max()*0.1
+  all_coords = []
+  focal_deg_horiz = focal_deg_vert*width/height
+  for z in np.arange(0, 1, 1.0/n_points_per_side):
+    # camera cone
+    all_coords.append(np.matmul(xrotation_deg(focal_deg_vert/2), np.matmul(yrotation_deg(focal_deg_horiz/2), scale*np.array((0,0,z)))))
+    all_coords.append(np.matmul(xrotation_deg(-focal_deg_vert/2), np.matmul(yrotation_deg(focal_deg_horiz/2), scale*np.array((0,0,z)))))
+    all_coords.append(np.matmul(xrotation_deg(focal_deg_vert/2), np.matmul(yrotation_deg(-focal_deg_horiz/2), scale*np.array((0,0,z)))))
+    all_coords.append(np.matmul(xrotation_deg(-focal_deg_vert/2), np.matmul(yrotation_deg(-focal_deg_horiz/2), scale*np.array((0,0,z)))))
+
+  corner_points = all_coords[-4:]
+  top_side_coords = np.concatenate((np.mgrid[corner_points[2][0]:corner_points[0][0]:complex(n_points_per_side)][:,None],
+                                   np.ones((n_points_per_side,1))*corner_points[1][1],
+                                   np.ones((n_points_per_side,1))*corner_points[0][2]), axis=1)
+  bottom_side_coords = np.concatenate((np.mgrid[corner_points[2][0]:corner_points[0][0]:complex(n_points_per_side)][:,None],
+                                   np.ones((n_points_per_side,1))*corner_points[0][1],
+                                   np.ones((n_points_per_side,1))*corner_points[0][2]), axis=1)
+  left_side_coords = np.concatenate((np.ones((n_points_per_side,1))*corner_points[2][0],
+                                   np.mgrid[corner_points[0][1]:corner_points[1][1]:complex(n_points_per_side)][:,None],
+                                   np.ones((n_points_per_side,1))*corner_points[0][2]), axis=1)
+  right_side_coords = np.concatenate((np.ones((n_points_per_side,1))*corner_points[0][0],
+                                   np.mgrid[corner_points[0][1]:corner_points[1][1]:complex(n_points_per_side)][:,None],
+                                   np.ones((n_points_per_side,1))*corner_points[0][2]), axis=1)
+  all_coords.extend(top_side_coords)
+  all_coords.extend(bottom_side_coords)
+  all_coords.extend(left_side_coords)
+  all_coords.extend(right_side_coords);
+
+  all_coords = np.array(all_coords)
+  if not rotation is None:
+    all_coords = np.matmul(rotation, all_coords.transpose()).transpose()
+  if not position is None:
+    all_coords = all_coords + position[None,:]
+  if np_colors is None:
+    return np.concatenate((coords, all_coords))
+  else:
+    new_colors = np.array([camera_color]*len(all_coords), dtype='uint8')
+    return np.concatenate((coords, all_coords)), np.concatenate((np_colors, new_colors))
+
+def get_grads(network):
+  params = list(network.parameters())
+  grads = [p.grad for p in params]
+  return grads
+
+def add_coord_map(input_tensor):
+  # https://github.com/mkocabas/CoordConv-pytorch/blob/master/CoordConv.py
+  """
+  Args:
+      input_tensor: shape(batch, channel, x_dim, y_dim)
+  """
+  batch_size, _, x_dim, y_dim = input_tensor.size()
+
+  xx_channel = torch.arange(x_dim).repeat(1, y_dim, 1)
+  yy_channel = torch.arange(y_dim).repeat(1, x_dim, 1).transpose(1, 2)
+
+  xx_channel = xx_channel.float() / (x_dim - 1)
+  yy_channel = yy_channel.float() / (y_dim - 1)
+
+  xx_channel = xx_channel * 2 - 1
+  yy_channel = yy_channel * 2 - 1
+
+  xx_channel = xx_channel.repeat(batch_size, 1, 1, 1).transpose(2, 3)
+  yy_channel = yy_channel.repeat(batch_size, 1, 1, 1).transpose(2, 3)
+
+  ret = torch.cat([
+    input_tensor,
+    xx_channel.type_as(input_tensor),
+    yy_channel.type_as(input_tensor)], dim=1)
+  return ret
+
+def show_pointcloud(coords, np_colors=None, title='none', win=None, env='PYCHARM_RUN', markersize=3, max_points=10000,
+                    force_aspect_ratio=True, valid_mask=None, nice_plot_rotation=3, labels=None):
+  if np_colors is None:
+    np_colors = np.ones(coords.shape)
+  coords = tonumpy(coords)
+  np_colors = tonumpy(np_colors)
+  if np_colors.dtype == 'float32':
+    if np_colors.max() > 1.0:
+      np_colors = np.array(np_colors, dtype='uint8')
+    else:
+      np_colors = np.array(np_colors * 255.0, dtype='uint8')
   if type(coords) is list:
-    for k in range(len(colors)):
-      if colors[k] is None:
-        colors[k] = np.ones(coords[k].shape)
-    colors = np.concatenate(colors, axis=0)
+    for k in range(len(np_colors)):
+      if np_colors[k] is None:
+        np_colors[k] = np.ones(coords[k].shape)
+    np_colors = np.concatenate(np_colors, axis=0)
     coords = np.concatenate(coords, axis=0)
+
+  assert coords.shape == np_colors.shape
+  if len(coords.shape) == 3:
+    coords = coords.reshape((3, -1))
+  if len(np_colors.shape) == 3:
+    np_colors = np_colors.reshape((3, -1))
+  assert len(coords.shape) == 2
+  if coords.shape[0] == 3:
+    coords = coords.transpose()
+    np_colors = np_colors.transpose()
+
   if not valid_mask is None:
+    valid_mask = np.array(valid_mask, dtype='bool')
     coords = coords[valid_mask]
-    colors = colors[valid_mask]
-  if subsample != -1:
-    coords = coords[::subsample]
-    colors = colors[::subsample]
+    np_colors = np_colors[valid_mask]
+
+  if max_points != -1 and coords.shape[0] > max_points:
+    selected_positions = random.sample(range(coords.shape[0]), max_points)
+    coords = coords[selected_positions]
+    np_colors = np_colors[selected_positions]
   if win is None:
     win = title
   if force_aspect_ratio:
+    #move this to use plotly
+
     #add coords on a bounding box, to force
-    x_max, y_max, z_max = coords.max(0)
-    x_min, y_min, z_min = coords.min(0)
-    x_dist_bbox = (x_max - x_min)
-    y_dist_bbox = (y_max - y_min)
-    z_dist_bbox = (z_max - z_min)
-    bbox_center = np.array((x_dist_bbox/2 + x_min, y_dist_bbox/2 + y_min, z_dist_bbox/2 + z_min))
-    max_bbox_dist = np.array((x_dist_bbox, y_dist_bbox, z_dist_bbox)).max()/2
-    bbox_coords = list()
-    for to_bits in range(8):
-      i = int(to_bits / 4)
-      j = int(to_bits / 2)
-      k = int(to_bits % 2)
-      bbox_coords.append(bbox_center + (max_bbox_dist*(-1)**i, max_bbox_dist*(-1)**j, max_bbox_dist*(-1)**k))
+    min_coords = coords.min(0)
+    max_coords = coords.max(0)
+
+    bbox_coords = generate_bbox_coords(min_coords, max_coords)
     bbox_colors = np.array([(255,255,255)]*8)
     bbox_coords = np.array(bbox_coords)
     coords = np.concatenate((coords, bbox_coords), axis=0)
-    colors = np.concatenate((colors, bbox_colors), axis=0)
-
-  if nice_rotation:
-    final_coords = np.matmul(xrotation(np.deg2rad(90)), coords.transpose()).transpose()
-    final_coords = np.matmul(yrotation(np.deg2rad(180)), final_coords.transpose()).transpose()
+    np_colors = np.concatenate((np_colors, bbox_colors), axis=0)
+    if not labels is None:
+      labels.extend(['' for _ in range(8)])
+  if nice_plot_rotation == 1:
+    plot_coords = np.matmul(xrotation_rad(np.deg2rad(90)), coords.transpose()).transpose()
+    plot_coords = np.matmul(yrotation_rad(np.deg2rad(180)), plot_coords.transpose()).transpose()
+    plot_coords = np.matmul(zrotation_rad(np.deg2rad(-45)), plot_coords.transpose()).transpose()
+  elif nice_plot_rotation == 2:
+    plot_coords = np.matmul(xrotation_rad(np.deg2rad(-90)), coords.transpose()).transpose()
+    plot_coords = np.matmul(yrotation_rad(np.deg2rad(180)), plot_coords.transpose()).transpose()
+    plot_coords = np.matmul(zrotation_rad(np.deg2rad(-45 + 180)), plot_coords.transpose()).transpose()
+  elif nice_plot_rotation == 3:
+    plot_coords = np.matmul(xrotation_rad(np.deg2rad(-90)), coords.transpose()).transpose()
+    plot_coords = np.matmul(yrotation_rad(np.deg2rad(180)), plot_coords.transpose()).transpose()
+    plot_coords = np.matmul(zrotation_rad(np.deg2rad(-45 )), plot_coords.transpose()).transpose()
+  elif nice_plot_rotation == 4:
+    plot_coords = np.matmul(xrotation_rad(np.deg2rad(-90)), coords.transpose()).transpose()
+    plot_coords = np.matmul(yrotation_rad(np.deg2rad(180)), plot_coords.transpose()).transpose()
+    plot_coords = np.matmul(zrotation_rad(np.deg2rad(180 )), plot_coords.transpose()).transpose()
   else:
-    final_coords = coords
+    plot_coords = coords
 
-  global_vis.scatter(final_coords, env=env, win=win,
-              opts={'markercolor':colors,
-                    'markersize' : markersize,
-                    'webgl': True,
-                    'markersymbol': 'dot',
-                    'title':title,
+  from visdom import _markerColorCheck
+  # we need to construct our own colors to override marker plotly options
+  # and allow custom hover (to show real coords)
+  colors = _markerColorCheck(np_colors, plot_coords, np.ones(len(plot_coords), dtype='uint8'), 1)
+  hovertext = ['x:{:.2f}\ny:{:.2f}\nz:{:.2f}\n'.format(float(k[0]), float(k[1]), float(k[2])) for k in coords]
+  if not labels is None:
+    assert len(labels) == len(hovertext)
+    hovertext = [hovertext[k] + ' {}'.format(labels[k]) for k in range(len(hovertext))]
+
+  global_vis.scatter(plot_coords, env=env, win=win,
+              opts={'webgl': True,
+                    'title': title,
                     'name': 'scatter',
+                    'traceopts': {
+                      'plotly':{
+                      '1': {
+                        #custom ops
+                        # https://plot.ly/python/reference/#scattergl-transforms
+                        'hoverlabel':{
+                          'bgcolor': '#000000'
+                        },
+                        'hoverinfo': 'text',
+                        'hovertext': hovertext,
+                        'marker': {
+                          'size': markersize,
+                          'symbol': 'dot',
+                          'color': colors[1],
+                          'line': {
+                              'color': '#000000',
+                              'width': 0,
+                          }
+                        }
+                      }}}
                     })
-
   '''
   verts = list()
   polygons = list()
@@ -351,6 +691,14 @@ def show_pointcloud(coords, colors=None, title='none', win=None, env=None, marke
     polygons.append([k*3, k*3 + 1, k*3 + 2])
   viz.mesh(X=np.array(verts), Y=np.array(polygons), opts={'opacity':0.5, 'color': colors[:N]}, win='test')
   '''
+
+def list_dir(folder, prepend_folder):
+  if prepend_folder:
+    return [folder + '/' + k for k in os.listdir(folder)]
+  return os.listdir(folder)
+
+def print_float(number):
+  return "{:.2f}".format(number)
 
 def imshow_matplotlib(im, path):
   imwrite(path,np.transpose(im, (1, 2, 0)))
@@ -378,6 +726,29 @@ def histogram_image(array, nbins=20, legend=None):
   pyplt.close()
   return np.transpose(image,[2,0,1])
 
+def project_points_to_plane(data_points, p_n_0):
+  if data_points.shape[0] != 3:
+    data_points = data_points.transpose()
+    transposed = True
+  else:
+    transposed = False
+  ls = data_points
+  p_n = p_n_0[:3]
+  p_0 = np.array((0,0,p_n_0[3]))
+  ds = (p_0 * p_n).sum(0) / (ls * p_n[:, None]).sum(0)
+  points_in_plane = ls * ds[None, :]
+  if transposed:
+    points_in_plane = points_in_plane.transpose()
+  return points_in_plane
+
+
+def fit_plane(data_points):
+  assert data_points.shape[0] == 3
+  A = np.c_[data_points[0, :], data_points[1, :], np.ones(data_points.shape[1])]
+  C, _, _, _ = lstsq(A, data_points[2, :])
+  # The new z will be the z where the original directions intersect the plane C
+  p_n_0 = np.array((C[0], C[1], -1, C[2]))
+  return p_n_0
 
 def create_legend_classes(class_names, class_colors, class_ids, image=None):
   from matplotlib.patches import Rectangle
@@ -408,32 +779,92 @@ def create_legend_classes(class_names, class_colors, class_ids, image=None):
 
   return image
 
+def fov_to_intrinsic_deg(fov_y_deg, width, height, return_inverse=True):
+  fov_y_rad = fov_y_deg/180.0*np.pi
+  return fov_to_intrinsic_rad(fov_y_rad, width, height, return_inverse=return_inverse)
 
-def fov_to_intrinsic(fov_x, fov_y, width, height):
-  fx = width / (2 * np.tan(fov_x / 2))
-  fy = height / (2 * np.tan(fov_y / 2))
-  intrinsics = np.array(((fx, 0, width / 2),
-                       (0, fy, height / 2),
-                       (0,  0,         1)))
-  return intrinsics, np.linalg.inv(intrinsics)
 
-def dump_pointcloud(coords, colors, file_name, valid_mask=None):
+def fov_to_intrinsic_rad(fov_y_rad, width, height, return_inverse=True):
+  if type(fov_y_rad) is torch.Tensor:
+    f = width / (2 * torch.tan(fov_y_rad / 2))
+    zero = torch.FloatTensor(np.zeros(fov_y_rad.shape[0]))
+    one = torch.FloatTensor(np.ones(fov_y_rad.shape[0]))
+    if fov_y_rad.is_cuda:
+      zero = zero.cuda()
+      one = one.cuda()
+    intrinsics_0 = torch.stack((f, zero, zero)).transpose(0,1)
+    intrinsics_1 = torch.stack((zero, f, zero)).transpose(0,1)
+    intrinsics_2 = torch.stack((width/2, height/2, one)).transpose(0,1)
+    intrinsics = torch.cat((intrinsics_0[:,:,None], intrinsics_1[:,:,None], intrinsics_2[:,:,None]), dim=-1)
+  else:
+    fx = width / (2 * np.tan(fov_y_rad / 2))
+    fy = height / (2 * np.tan(fov_y_rad / 2))
+    intrinsics = np.array(((fx, 0, width / 2),
+                         (0, fy, height / 2),
+                         (0,  0,         1)), dtype='float32')
+  if return_inverse:
+    if type(fov_y_rad) is torch.Tensor:
+      return intrinsics, torch.inverse(intrinsics)
+    else:
+      return intrinsics, np.linalg.inv(intrinsics)
+  else:
+    return intrinsics
+
+def dump_pointcloud(coords, colors, file_name, valid_mask=None, max_points=10000000, subsample_by_distance=False):
   if not valid_mask is None:
     coords = coords[valid_mask]
     colors = colors[valid_mask]
+  if max_points != -1 and coords.shape[0] > max_points:
+    if subsample_by_distance:
+      #just get the ones whose neighbors are further away
+      distances = -1*(np.sqrt(((coords[:-1] - coords[1:])**2).sum(-1)))
+      distances_and_indices = list(zip(distances, range(len(distances))))
+      distances_and_indices.sort()
+      selected_positions = [k[1] for k in distances_and_indices[:max_points]]
+    else:
+      selected_positions = random.sample(range(coords.shape[0]), max_points)
+    coords = coords[selected_positions]
+    colors = colors[selected_positions]
   data_np = np.concatenate((coords, colors), axis=1)
   tupled_data = [tuple(k) for k in data_np.tolist()]
   data = np.array(tupled_data, dtype=[('x', 'f4'),
-                                               ('y', 'f4'),
-                                               ('z', 'f4'),
-                                               ('red', 'u1'),
-                                               ('green', 'u1'),
-                                               ('blue', 'u1')])
+                                     ('y', 'f4'),
+                                     ('z', 'f4'),
+                                     ('red', 'u1'),
+                                     ('green', 'u1'),
+                                     ('blue', 'u1')])
 
   vertex = PlyElement.describe(data, 'vertex')
   vertex.data = data
   plydata = PlyData([vertex])
+  if not os.path.exists(os.path.dirname(file_name)):
+    os.makedirs(os.path.dirname(file_name))
   plydata.write(file_name + '.ply')
+
+def dump_to_pickle(filename, obj):
+  try:
+    with open(filename, 'wb') as handle:
+      pickle.dump(obj, handle, protocol=pickle.HIGHEST_PROTOCOL)
+  except:
+    with open(filename, 'wb') as handle:
+      pickle.dump(obj, handle)
+
+def load_from_pickle(filename):
+  try:
+    with open(filename, 'rb') as handle:
+      return pickle.load(handle)
+  except:
+    pass
+  try:
+    with open(filename, 'rb') as handle:
+      return  pickle.load(handle, encoding='latin1')
+  except:
+    pass
+  try:
+    with open(filename, 'rb') as handle:
+      return  pickle.load( open( filename, "rb" ) )
+  except:
+    raise Exception('Failed to unpickle!')
 
 def load_np_array(file_name):
   try:
@@ -461,18 +892,8 @@ def delete(file):
   if os.path.exists(file):
     os.remove(file)
 
-def myimresize(img, target_shape):
-  max = img.max(); min = img.min()
-  if max > min:
-    img = (img - min)/(max - min)
-  if len(img.shape) == 3 and img.shape[0] in [1,3]:
-    img = np.transpose(resize(np.transpose(img, (1,2,0)), target_shape, mode='constant'), (2,0,1))
-  else:
-    img = resize(img, target_shape, mode='constant')
-  if max > min:
-    return (img*(max - min) + min)
-  else:
-    return img
+def torch_deg2rad(angle_deg):
+  return (angle_deg*np.pi)/180
 
 def torch_load(torch_path, gpus):
   if len(gpus) == 0:
@@ -523,7 +944,7 @@ def crop_center(img, crop):
 def undo_img_normalization(img, dataset='movies'):
   if img.shape[0] == 1:
     return img
-  from data.datagenerators.movie_sequence_dataset import MovieSequenceDataset
+  from sintel_data.datagenerators.movie_sequence_dataset import MovieSequenceDataset
   std = MovieSequenceDataset.getstd()
   mean = MovieSequenceDataset.getmean()
   if not type(img) is np.ndarray:
@@ -538,7 +959,7 @@ def undo_img_normalization(img, dataset='movies'):
   return img
 
 def do_img_normalization(img, dataset='movies'):
-  from data.datagenerators.movie_sequence_dataset import MovieSequenceDataset
+  from sintel_data.datagenerators.movie_sequence_dataset import MovieSequenceDataset
   if dataset != 'movies':
     raise Exception('Not implemented!')
   if img.shape[0] == 3:
@@ -549,9 +970,9 @@ def do_img_normalization(img, dataset='movies'):
 def tonumpy(tensor):
   if type(tensor) is np.ndarray:
     return tensor
+  if tensor.requires_grad:
+    tensor = tensor.detach()
   if type(tensor) is torch.autograd.Variable:
-    if tensor.requires_grad:
-      tensor = tensor.detach()
     tensor = tensor.data
   if tensor.is_cuda:
     tensor = tensor.cpu()
@@ -572,7 +993,7 @@ def pose_to_extrinsic(mat):
   return 1
 
 def subset_frames(get_dataset=False, fps=4):
-  from data.datagenerators.movie_sequence_dataset import MovieSequenceDataset
+  from sintel_data.datagenerators.movie_sequence_dataset import MovieSequenceDataset
   selected_movies = ['pulp_fiction_1994']
   selected_frames =[]
   #refered as indexes at 4 fps
@@ -626,7 +1047,12 @@ def filter_horizontal_sift_matches(L_pts, R_pts, sim_distance, env = None, L_img
   return L_pts, R_pts, sim_distance
 
 def get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None, dist_threshold=-1, N_MATCHES=-1):
-  sift = cv2.xfeatures2d.SIFT_create()
+  try:
+    sift = cv2.xfeatures2d.SIFT_create()
+  except:
+    print("Error when creating SIFT! Will use something else")
+    sift = cv2.xfeatures2d.StarDetector_create()
+
   ref_kp, ref_desc = sift.detectAndCompute(gray_ref_img, None)
   tgt_kp, tgt_desc = sift.detectAndCompute(gray_tgt_img, None)
 
@@ -682,34 +1108,62 @@ def compute_sift_image(L_img, R_img, mask_ref_and_target=None, make_plots=True, 
   sim_distances = [m.distance for m in matches]
 
   if make_plots:
-    less_than_100 = [d for d in sim_distances if d < 100]
+    draw_sift_matches(gray_L_img, gray_R_img, matches, ref_kp, tgt_kp, sim_distances, env)
+  return L_pts, R_pts, matches, sim_distances
 
-    match_img = cv2.drawMatches(
-      gray_L_img, ref_kp,
-      gray_R_img, tgt_kp,
-      matches, gray_R_img.copy(), flags=0)
-    imshow(match_img / 255.0, title='all_sift_matches', env=env, biggest_dim=1000)
+def draw_sift_matches(L_img, R_img, matches, ref_kp, tgt_kp, sim_distances, env, show_biggest_dim=1000):
+  less_than_100 = [d for d in sim_distances if d < 100]
+  if L_img.shape[0] == 3:
+    L_img = L_img.transpose((1,2,0))
+    R_img = R_img.transpose((1,2,0))
+  if len(L_img.shape) == 3 and L_img.shape[-1] == 3:
+    L_img = cv2.cvtColor(L_img, cv2.COLOR_BGR2GRAY)
+    R_img = cv2.cvtColor(R_img, cv2.COLOR_BGR2GRAY)
 
-    match_img = cv2.drawMatches(
-      gray_L_img, ref_kp,
-      gray_R_img, tgt_kp,
-      matches[:len(less_than_100)], gray_R_img.copy(), flags=0)
-    imshow(match_img / 255.0, title='less_than_100_dist_sift_matches', env=env, biggest_dim=1000)
+  if matches is None:
+    assert len(ref_kp) == len(tgt_kp) and len(ref_kp) == len(sim_distances)
+    matches = list()
+    for k in range(len(ref_kp)):
+      match = cv2.DMatch()
+      match.distance = sim_distances[k]
+      match.trainIdx = k
+      match.queryIdx = k
+      matches.append(match)
 
+  if type(ref_kp) is np.ndarray:
+    transformed_ref_kps = list()
+    transformed_tgt_kps = list()
+    for k in range((len(ref_kp))):
+      transformed_ref_kps.append(cv2.KeyPoint(ref_kp[k][0], ref_kp[k][1], 0))
+    for k in range((len(tgt_kp))):
+      transformed_tgt_kps.append(cv2.KeyPoint(tgt_kp[k][0], tgt_kp[k][1], 0))
+    ref_kp = transformed_ref_kps
+    tgt_kp = transformed_tgt_kps
 
-    match_img = cv2.drawMatches(
-      gray_L_img, ref_kp,
-      gray_R_img, tgt_kp,
-      matches[:10], gray_R_img.copy(), flags=0)
-    imshow(match_img / 255.0, title='top_10_sift_matches', env=env, biggest_dim=1000)
+  match_img = cv2.drawMatches(
+    L_img, ref_kp,
+    R_img, tgt_kp,
+    matches, R_img.copy(), flags=0)
+  imshow(match_img / 255.0, title='all_sift_matches', env=env, biggest_dim=show_biggest_dim)
 
-    match_img = cv2.drawMatches(
-      gray_L_img, ref_kp,
-      gray_R_img, tgt_kp,
-      matches[-10:], gray_R_img.copy(), flags=0)
-    imshow(match_img / 255.0, title='bottom_10_sift_matches', env=env, biggest_dim=1000)
+  match_img = cv2.drawMatches(
+    L_img, ref_kp,
+    R_img, tgt_kp,
+    matches[:len(less_than_100)], R_img.copy(), flags=0)
+  imshow(match_img / 255.0, title='less_than_100_dist_sift_matches', env=env, biggest_dim=show_biggest_dim)
 
-  return L_pts, R_pts, sim_distances
+  match_img = cv2.drawMatches(
+    L_img, ref_kp,
+    R_img, tgt_kp,
+    matches[:10], R_img.copy(), flags=0)
+  imshow(match_img / 255.0, title='top_10_sift_matches', env=env, biggest_dim=show_biggest_dim)
+
+  match_img = cv2.drawMatches(
+    L_img, ref_kp,
+    R_img, tgt_kp,
+    matches[-10:], R_img.copy(), flags=0)
+  imshow(match_img / 255.0, title='bottom_10_sift_matches', env=env, biggest_dim=show_biggest_dim)
+
 
 def get_unknown_intrinsics(im_h, im_w):
   offset_x = im_w / 2
@@ -743,12 +1197,47 @@ def get_simulated_intrinsics(im_h, im_w):
                          [0,         0, 1.000000e+00]], dtype='float32')
   return intrinsics
 
-def load_json(file_name):
+def load_json(file_name, replace_nans=False):
   with open(file_name) as handle:
-    return json.loads(handle.read())
+    json_string = handle.read()
+    if replace_nans:
+      json_string = json_string.replace('-nan', 'NaN').replace('nan', 'NaN')
+    parsed_json = json.loads(json_string)
+    return parsed_json
 def dump_json(json_dict, filename):
   with open(filename, 'w') as fp:
     json.dump(json_dict, fp, indent=4)
+
+
+try:
+    # For Python 3.0 and later
+    from urllib.request import urlopen
+except ImportError:
+    # Fall back to Python 2's urllib2
+    from urllib2 import urlopen
+
+import json
+
+def get_jsonparsed_data(url):
+    """
+    Receive the content of ``url``, parse it as JSON and return the object.
+
+    Parameters
+    ----------
+    url : str
+
+    Returns
+    -------
+    dict
+    """
+    response = urlopen(url)
+    data = response.read().decode("utf-8")
+    return json.loads(data)
+
+
+url = ("http://maps.googleapis.com/maps/api/geocode/json?"
+       "address=googleplex&sensor=false")
+print(get_jsonparsed_data(url))
 
 def np_to_tensor(np_obj):
   return torch.FloatTensor(np_obj)
@@ -759,6 +1248,28 @@ def np_to_variable(np_obj):
 def find_closest_string(word, string_list):
   return difflib.get_close_matches(word, string_list)[0]
 
+def generate_palette(n, seed=-1):
+  import random
+  if seed != -1:
+    previous_state = random.getstate()
+    random.seed(seed)
+  ret = []
+  r = int(random.random() * 256)
+  g = int(random.random() * 256)
+  b = int(random.random() * 256)
+  step = 256 / n
+  for i in range(n):
+    r += step
+    g += step
+    b += step
+    r = int(r) % 256
+    g = int(g) % 256
+    b = int(b) % 256
+    ret.append((r,g,b))
+  if seed != -1:
+    random.setstate(previous_state)
+  return ret
+
 def superpixels_image(image, num_segments=50):
   from skimage.segmentation import slic
   from skimage.segmentation import mark_boundaries
@@ -768,20 +1279,100 @@ def superpixels_image(image, num_segments=50):
   imshow(segments, title='segments')
   return segments
 
-def xrotation(th):
-  c = np.cos(th)
-  s = np.sin(th)
-  return np.array([[1, 0, 0], [0, c, s], [0, -s, c]])
+def xrotation_deg_torch(deg, four_dims=False):
+  return xrotation_rad_torch(torch_deg2rad(deg), four_dims)
 
-def yrotation(th):
-  c = np.cos(th)
-  s = np.sin(th)
-  return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+def yrotation_deg_torch(deg, four_dims=False):
+  return yrotation_rad_torch(torch_deg2rad(deg), four_dims)
 
-def zrotation(th):
+def zrotation_deg_torch(deg, four_dims=False):
+  return zrotation_rad_torch(torch_deg2rad(deg), four_dims)
+
+def xrotation_rad_torch(rad, four_dims=False):
+  c = torch.cos(rad)
+  s = torch.sin(rad)
+  zeros = torch.zeros_like(rad)
+  ones = torch.ones_like(rad)
+  if not four_dims:
+    return torch.cat([
+                     torch.cat([ones[:, None], zeros[:, None], zeros[:, None]], dim=-1)[:,:,None],
+                     torch.cat([zeros[:, None], c[:, None], s[:, None]], dim=-1)[:,:,None],
+                     torch.cat([zeros[:, None], -s[:, None], c[:, None]], dim=-1)[:,:,None]
+                      ], dim=-1)
+  else:
+    raise Exception('Not implemented!')
+    return torch.cat([[ones, zeros, zeros, zeros],
+                     [zeros, c, s, zeros],
+                     [zeros, -s, c, zeros],
+                     [zeros, zeros, zeros, ones]])
+
+def yrotation_rad_torch(rad, four_dims=False):
+  c = torch.cos(rad)
+  s = torch.sin(rad)
+  zeros = torch.zeros_like(rad)
+  ones = torch.ones_like(rad)
+  if not four_dims:
+    return torch.cat([
+      torch.cat([c[:, None], zeros[:, None], s[:, None]], dim=-1)[:, :, None],
+      torch.cat([zeros[:, None], ones[:, None], zeros[:, None]], dim=-1)[:, :, None],
+      torch.cat([-s[:, None], zeros[:, None], c[:, None]], dim=-1)[:, :, None]
+    ], dim=-1)
+  else:
+    raise Exception('Not implemented!')
+    return torch.cat([[c, zeros, s, zeros],
+                      [zeros, ones, zeros, zeros],
+                      [-s, zeros, c, zeros],
+                      [zeros, zeros, zeros, ones]])
+
+def zrotation_rad_torch(rad, four_dims=False):
+  c = torch.cos(rad)
+  s = torch.sin(rad)
+  zeros = torch.zeros_like(rad)
+  ones = torch.ones_like(rad)
+  if not four_dims:
+    return torch.cat([
+      torch.cat([c[:, None], -s[:, None], zeros[:, None]], dim=-1)[:, :, None],
+      torch.cat([s[:, None],  c[:, None], zeros[:, None]], dim=-1)[:, :, None],
+      torch.cat([zeros[:, None], zeros[:, None], ones[:, None]], dim=-1)[:, :, None]
+    ], dim=-1)
+  else:
+    raise Exception('Not implemented!')
+    return torch.cat([[c, zeros, s, zeros],
+                      [zeros, ones, zeros, zeros],
+                      [-s, zeros, c, zeros],
+                      [zeros, zeros, zeros, ones]])
+
+def xrotation_deg(deg, four_dims=False):
+  return xrotation_rad(np.deg2rad(deg), four_dims)
+
+def yrotation_deg(deg, four_dims=False):
+  return yrotation_rad(np.deg2rad(deg), four_dims)
+def zrotation_deg(deg, four_dims=False):
+  return zrotation_rad(np.deg2rad(deg), four_dims)
+
+def xrotation_rad(th, four_dims=False):
   c = np.cos(th)
   s = np.sin(th)
-  return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+  if not four_dims:
+    return np.array([[1, 0, 0], [0, c, s], [0, -s, c]])
+  else:
+    return np.array([[1, 0, 0, 0], [0, c, s, 0], [0, -s, c, 0], [0, 0, 0, 1]])
+
+def yrotation_rad(th, four_dims=False):
+  c = np.cos(th)
+  s = np.sin(th)
+  if not four_dims:
+    return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+  else:
+    return np.array([[c, 0, s, 0], [0, 1, 0, 0], [-s, 0, c, 0], [0, 0, 0, 1]])
+
+def zrotation_rad(th, four_dims=False):
+  c = np.cos(th)
+  s = np.sin(th)
+  if not four_dims:
+    return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+  else:
+    return np.array([[c, -s, 0, 0], [s, c, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
 
 def edges_semantic(semantic_instance_map):
   sk_edges = feature.canny(semantic_instance_map, sigma=1) * 1.0
@@ -795,32 +1386,105 @@ def edges_image(img):
   sk_edges = feature.canny(gray, sigma=3) * 1.0
   return sk_edges
 
-  '''
-  model = compute_edgelets(img)
-  vis_edgelets(img, model)
-  rectified = rectify_image(img, 4, algorithm='independent')
-  imshow(rectified, biggest_dim=400, env='test_lines', title='img')
+def linear_plc_to_abs_plc(linear_plc):
+  assert len(linear_plc.shape) == 4
+  if not type(linear_plc) is torch.Tensor:
+    raise Exception('Only implemented for tocrch tensor')
+  return torch.abs(linear_plc)
 
-  gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-  edges = cv2.Canny(gray, 50, 150, apertureSize=3)
-  minLineLength = 10
-  maxLineGap = 10
-  lines = cv2.HoughLinesP(edges, 1, np.pi / 180, 100, minLineLength, maxLineGap)
-  for x1, y1, x2, y2 in lines[0]:
-      cv2.line(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-  imshow(img[:,:,::-1], biggest_dim=400, env='test_lines', title='img_lines_canny')
-  '''
+def abs_plc_to_linear_plc(abs_plc):
+  assert len(abs_plc.shape) == 4
+  if not type(abs_plc) is torch.Tensor:
+    raise Exception('Only implemented for torch tensor')
+  height, width  = abs_plc.shape[2:]
+  mask = torch.FloatTensor(np.ones((1, 3, height, width)))
+  mask[:, 0, :, :int(width/2)] = -1
+  mask[:, 1, :int(height/2)] = -1
+  if abs_plc.is_cuda:
+    mask = mask.cuda()
+  plc = abs_plc*mask
+  return plc
+
+def linear_plc_to_log_plc(linear_plc, zero_log_bias):
+  assert len(linear_plc.shape) == 4
+  if not type(linear_plc) is torch.Tensor:
+    raise Exception('Only implemented for tocrch tensor')
+  return torch.log(torch.abs(linear_plc) + zero_log_bias)
+
+def log_plc_to_linear_plc(log_plc, zero_log_bias):
+  assert len(log_plc.shape) == 4
+  if not type(log_plc) is torch.Tensor:
+    raise Exception('Only implemented for torch tensor')
+  plc = torch.exp(log_plc) - zero_log_bias
+  height, width  = plc.shape[2:]
+  mask = torch.FloatTensor(np.ones((1, 3, height, width)))
+  mask[:, 0, :, :int(width/2)] = -1
+  mask[:, 1, :int(height/2)] = -1
+  if plc.is_cuda:
+    mask = mask.cuda()
+  plc = plc*mask
+  return plc
 
 
+def numpy_batch_mm(A, B):
+  #performs B matrix multiplications of tensors B x ? X W times B X W X ?
+  return np.matmul(A, B)
+
+def sample_gumbel(shape, eps=1e-20, cuda=False):
+  if cuda:
+    U = torch.rand(shape).cuda()
+  else:
+    U = torch.rand(shape)
+  return -Variable(torch.log(-torch.log(U + eps) + eps))
+
+def gumbel_softmax_sample(logits, temperature):
+  y = logits + sample_gumbel(logits.size(), logits.is_cuda)
+  return F.softmax(y / temperature, dim=-1)
+
+
+def gumbel_softmax(logits, temperature):
+  """
+  input: [*, n_class]
+  return: [*, n_class] an one-hot vector
+  """
+  y = gumbel_softmax_sample(logits, temperature)
+  shape = y.size()
+  _, ind = y.max(dim=-1)
+  y_hard = torch.zeros_like(y).view(-1, shape[-1])
+  y_hard.scatter_(1, ind.view(-1, 1), 1)
+  y_hard = y_hard.view(*shape)
+  return (y_hard - y).detach() + y
+
+def load_matlab_mat(filename):
+  from scipy.io import loadmat
+  return loadmat(filename)
+
+
+def save_checkpoint(save_path, nets_to_save, is_best):
+  for (prefix, state) in nets_to_save.items():
+    torch.save(state, save_path / ('{}_model_latest.pth.tar').format(prefix))
+  if is_best:
+    for prefix in nets_to_save.keys():
+      shutil.copyfile(save_path / ('{}_model_latest.pth.tar').format(prefix),
+                      save_path / ('{}_model_best.pth.tar').format(prefix))
+  print('Saved in: ' + save_path)
+
+def reject_outliers(data, m=2):
+  return data[abs(data - np.mean(data)) < m * np.std(data)]
 
 if __name__ == '__main__':
+  coords = np.zeros((10000, 3), dtype='float32')
+  for k in range(1000):
+    show_pointcloud(coords)
+    print(k)
   #dataset = subset_frames(get_dataset=True, width=240)
   #for i in range(len(dataset)):
   #  ref_img, tgt_imgs, intrinsics, intrinsics_inv, filename, base_index = dataset.__getitem__(i)#range(len(dataset))[-20])
   #  tgt_img = tgt_imgs[1]
   #  compute_sift_image(ref_img, tgt_img, mask=None, make_plots=True)
+
   from scipy.io import loadmat
-  colors = loadmat('data/color150.mat')['colors']
+  colors = load_matlab_mat('data/color150.mat')['colors']
   import csv
 
   with open('data/object150_info.csv', 'r') as f:
