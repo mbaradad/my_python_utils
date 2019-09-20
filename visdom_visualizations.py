@@ -13,14 +13,14 @@ import numpy as np
 
 import os
 import warnings
+import cv2
 
-from skimage.transform import resize
 
 if not 'NO_VISDOM' in os.environ.keys():
   with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     import visdom
-    global_vis = visdom.Visdom(port=12890, server='http://vision05', use_incoming_socket=False)
+    global_vis = visdom.Visdom(port=12890, server='http://vision05', use_incoming_socket=True)
 
 def visdom_heatmap(heatmap, window=None, env=None, vis=None):
   trace = go.Heatmap(z=heatmap)
@@ -41,7 +41,7 @@ def imshow_vis(im, title=None, window=None, env=None, vis=None):
   vis.win_exists(title)
   vis.image(im, win=window, opts=opts, env=env)
 
-def visdom_dict(dict_to_plot, title=None, window=None, env=None, vis=None, simplify_floats=True):
+def visdom_dict(dict_to_plot, title=None, window=None, env='PYCHARN_RUN', vis=None, simplify_floats=True):
   if vis is None:
     vis = global_vis
   opts = dict()
@@ -108,9 +108,9 @@ def myimresize(img, target_shape):
   if max > min:
     img = (img - min)/(max - min)
   if len(img.shape) == 3 and img.shape[0] in [1,3]:
-    img = np.transpose(resize(np.transpose(img, (1,2,0)), target_shape, mode='constant', anti_aliasing=True), (2,0,1))
+    img = np.transpose(cv2.resize(np.transpose(img, (1,2,0)), target_shape[::-1]), (2,0,1))
   else:
-    img = resize(img, target_shape, mode='constant', anti_aliasing=True)
+    img = cv2.resize(img, target_shape[::-1])
   if max > min:
     return (img*(max - min) + min)
   else:

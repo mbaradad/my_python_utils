@@ -1,6 +1,9 @@
 #force 3.5 div to make it compatible with both 2.7 and 3.5
 from __future__ import division
 #TODO: move imports to functions, to make loading faster
+from _curses import raw
+#import open3d as o3d
+
 try:
   import cPickle as pickle
 except:
@@ -10,6 +13,7 @@ import cv2
 
 import glob
 import shutil
+import time
 
 import seaborn as sns
 import warnings
@@ -22,6 +26,8 @@ from imageio import imwrite
 from scipy import misc
 import struct
 
+from scipy.ndimage.filters import gaussian_filter
+
 import imageio
 import torch
 import numpy as np
@@ -30,7 +36,6 @@ from PIL import Image, ImageDraw
 import datetime
 import json
 import difflib
-from skimage import feature
 
 from plyfile import PlyData, PlyElement
 
@@ -38,12 +43,19 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from scipy.linalg import lstsq
+import socket
+
+global VISDOM_BIGGEST_DIM
+VISDOM_BIGGEST_DIM = 300
+
+def get_hostname():
+  return socket.gethostname()
 
 def select_gpus(gpus_arg):
   #so that default gpu is one of the selected, instead of 0
   if len(gpus_arg) > 0:
     os.environ['CUDA_VISIBLE_DEVICES'] = gpus_arg
-    gpus = range(len(gpus_arg.split(',')))
+    gpus = list(range(len(gpus_arg.split(','))))
   else:
     os.environ['CUDA_VISIBLE_DEVICES'] = ''
     gpus = []
@@ -52,7 +64,6 @@ def select_gpus(gpus_arg):
 
 def gettimedatestring():
   return datetime.datetime.now().strftime("%m-%d-%H:%M")
-
 
 from multiprocess import Lock
 global lock
@@ -119,6 +130,17 @@ if not is_headless_execution():
     matplotlib.use('Agg')
 
 
+def chunk_list(seq, num):
+  avg = len(seq) / float(num)
+  out = []
+  last = 0.0
+
+  while last < len(seq):
+    out.append(seq[int(last):int(last + avg)])
+    last += avg
+
+  return out
+
 def png_16_bits_imread(file):
   return cv2.imread(file, -cv2.IMREAD_ANYDEPTH)
 
@@ -128,13 +150,32 @@ def cv2_imread(file, return_BGR=False):
     return im
   return im[::-1, :, :]
 
-def cv2_imwrite(im, file, rgb=True):
-  im = im.transpose(1, 2, 0)
+def load_image_tile(filename, top, bottom, left, right, dtype='uint8'):
+  #img = pyvips.Image.new_from_file(filename, access='sequential')
+  roi = img.crop(left, top, right - left, bottom - top)
+  mem_img = roi.write_to_memory()
+
+  # Make a numpy array from that buffer object
+  nparr = np.ndarray(buffer=mem_img, dtype=dtype,
+                     shape=[roi.height, roi.width, roi.bands])
+  return nparr
+
+def cv2_imwrite(im, file, rgb=True, normalize=False):
+  if len(im.shape) == 3 and im.shape[0] == 3:
+    im = im.transpose(1, 2, 0)
+  if normalize:
+    im = (im - im.min())/(im.max() - im.min())
+    im = np.array(255.0*im, dtype='uint8')
   imwrite(file, im)
 
+def merge_side_by_side(im1, im2):
+  assert im1.shape == im2.shape
+  im_canvas = np.concatenate((np.zeros_like(im1), np.zeros_like(im1)), axis=2)
+  im_canvas[:,:,:im1.shape[-1]] = im1
+  im_canvas[:,:,im1.shape[-1]:] = im2
+  return im_canvas
 
-
-def visdom_histogram(array, env='PYCHARM_RUN', win=None, title=None, vis=None):
+def visdom_histogram(array, win=None, title=None, env='PYCHARM_RUN', vis=None):
   if vis is None:
     vis = global_vis
   opt = dict()
@@ -145,6 +186,19 @@ def visdom_histogram(array, env='PYCHARM_RUN', win=None, title=None, vis=None):
   if win is None:
     win = title
   vis.histogram(array, env=env, win=win, opts=opt)
+
+
+def visdom_barplot(array, env='PYCHARM_RUN', win=None, title=None, vis=None):
+  if vis is None:
+    vis = global_vis
+  opt = dict()
+  if not title is None:
+    opt['title'] = title
+  else:
+    opt['title'] = str(win)
+  if win is None:
+    win = title
+  vis.bar(array, env=env, win=win, opts=opt)
 
 def visdom_bar_plot(array, rownames=None, env='PYCHARM_RUN', win=None, title=None, vis=None):
   if vis is None:
@@ -175,8 +229,10 @@ def touch(fname, times=None):
   with open(fname, 'a'):
     os.utime(fname, times)
 
+def get_image_ressolution_fast_jpg(filename):
+  return get_image_width_height_fast_jpg(filename)
 
-def get_image_size_fast_jpg(filename):
+def get_image_width_height_fast_jpg(filename):
   """"This function prints the resolution of the jpeg image file passed into it"""
 
   # open image for reading in binary mode
@@ -282,6 +338,7 @@ def str2intlist(v):
    return []
  return [int(k) for k in v.split(',')]
 
+
 def str2bool(v):
   if v.lower() in ('yes', 'true', 't', 'y', '1'):
     return True
@@ -290,13 +347,6 @@ def str2bool(v):
   else:
     raise argparse.ArgumentTypeError('Boolean value expected.')
 
-def add_arrow(im, origin, end, color=(255,0,0)):
-  im = Image.fromarray(im.transpose())
-  draw = ImageDraw.Draw(im)
-
-  draw.line((origin[0], origin[1], end[0], end[1]), fill=color)
-
-  return np.array(im).transpose()
 
 def add_2d_bbox(im, min_corner_xy, max_corner_xy, color):
   im = Image.fromarray(im.transpose())
@@ -309,13 +359,14 @@ def add_2d_bbox(im, min_corner_xy, max_corner_xy, color):
 
   return np.array(im).transpose()
 
-def add_arrow(im, origin, end, color=(255,0,0)):
+def add_line(im, origin_x_y, end_x_y, color=(255, 0, 0)):
   im = Image.fromarray(im.transpose())
   draw = ImageDraw.Draw(im)
 
-  draw.line((origin[0], origin[1], end[0], end[1]), fill=color)
+  draw.line((origin_x_y[1], origin_x_y[0], end_x_y[1], end_x_y[0]), fill=color)
 
   return np.array(im).transpose()
+
 
 def add_circle(im, centers_x_y, radius=5, color=(255, 0, 0)):
   im = Image.fromarray(im.transpose())
@@ -332,8 +383,74 @@ def add_circle(im, centers_x_y, radius=5, color=(255, 0, 0)):
 
   return np.array(im).transpose()
 
+def text_editor():
+  txt = 'This is a write demo notepad. Type below. Delete clears text:<br>'
+  callback_text_window = global_vis.text(txt, win='asdf')
 
-def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, window=None, env='PYCHARM_RUN', fps=None, vis=None, add_ranges=False):
+  def type_callback(event):
+    if event['event_type'] == 'KeyPress':
+      curr_txt = event['pane_data']['content']
+      if event['key'] == 'Enter':
+        curr_txt += '<br>'
+      elif event['key'] == 'Backspace':
+        curr_txt = curr_txt[:-1]
+      elif event['key'] == 'Delete':
+        curr_txt = txt
+      elif len(event['key']) == 1:
+        curr_txt += event['key']
+      global_vis.text(curr_txt, win=callback_text_window)
+
+  global_vis.register_event_handler(type_callback, 'asdf')
+
+def line_selector_x_y(img, window):
+  raw_img = np.array(imshow(img, window=window, return_image=True)*255, dtype='uint8')
+  #global_vis.text(txt, win=window)
+  global first, second, first_finished, everything_finished
+  first = np.array((0,0))
+  second = None
+  img_to_show = add_circle(raw_img, first, radius=1)
+  imshow(img_to_show, window=window, return_image=True)
+  first_finished = everything_finished = False
+  def type_callback(event):
+    global first, second, first_finished, everything_finished
+    if event['event_type'] == 'KeyPress':
+      if not first_finished:
+        actual = first
+      else:
+        actual = second
+      if event['key'] == 'ArrowUp':
+        actual[1] = max(0, actual[1]-1)
+      elif event['key'] == 'ArrowDown':
+        actual[1] = min(raw_img.shape[1], actual[1]+1)
+      elif event['key'] == 'ArrowLeft':
+        actual[0] = max(0, actual[0]-1)
+      elif event['key'] == 'ArrowRight':
+        actual[0] = min(raw_img.shape[2], actual[0]+1)
+      elif event['key'] == ' ':
+        if first_finished:
+          everything_finished = True
+        else:
+          first_finished = True
+          second = np.array(first)
+      else:
+        return
+      if not first_finished:
+        img_to_show = add_circle(raw_img, first, radius=1)
+      else:
+        img_to_show = add_line(raw_img, first, second)
+        img_to_show = add_circle(img_to_show, second, radius=1)
+
+      imshow(img_to_show, window=window)
+
+  global_vis.register_event_handler(type_callback, window)
+  while not everything_finished:
+    time.sleep(0.02)
+  return first, second
+
+def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, window=None, env='PYCHARM_RUN', fps=None, vis=None, add_ranges=False, return_image=False):
+  if 'VISDOM_BIGGEST_DIM' in globals() and biggest_dim is None:
+    global VISDOM_BIGGEST_DIM
+    biggest_dim = VISDOM_BIGGEST_DIM
   if window is None:
     window = title
   if type(im) == 'string':
@@ -374,6 +491,8 @@ def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True, 
       make_gif(im, path=path, fps=fps, biggest_dim=biggest_dim)
     else:
       imshow_matplotlib(im, path)
+  if return_image:
+    return im
 
 def make_gif(ims, path, fps=None, biggest_dim=None):
   if ims.dtype != 'uint8':
@@ -394,6 +513,10 @@ def make_gif(ims, path, fps=None, biggest_dim=None):
     gif = imageio.mimread(path)
     imageio.mimsave(path, gif, fps=fps)
 
+def list_of_lists_into_single_list(list_of_lists):
+  flat_list = [item for sublist in list_of_lists for item in sublist]
+  return flat_list
+
 def interlace(list_of_lists):
   #all elements same length
   assert len(set([len(k) for k in list_of_lists])) <= 1
@@ -411,6 +534,10 @@ def str2img(string_to_print, height=100, width=100):
   d = ImageDraw.Draw(img)
   d.text((20, 20), string_to_print, fill=(255, 255, 255))
   return np.array(img).transpose((2,0,1))
+
+def count_trainable_parameters(network):
+  n_parameters = sum(p.numel() for p in network.parameters() if p.requires_grad)
+  return n_parameters
 
 def create_plane_pointcloud_coords(center, normal, extent, samples, color=(0,0,0)):
   if normal[0] == 0 and normal[1] == 0:
@@ -499,7 +626,6 @@ def create_bbox_sides_and_corner_coords(min_corner, max_corner, bbox_center, bbo
 
   return all_coords, all_colors, corner_coords, corner_colors
 
-
 def add_camera_to_pointcloud(position, rotation, focal_deg_vert, width, height, coords, np_colors=None, n_points_per_side=100, camera_color=(0,0,0)):
   scale = coords[:,2].max()*0.1
   all_coords = []
@@ -545,6 +671,12 @@ def get_grads(network):
   grads = [p.grad for p in params]
   return grads
 
+def scale_img_to_fit_canvas(img, canvas_height, canvas_width):
+  im = Image.fromarray(img.transpose((1,2,0)))
+  im.thumbnail((canvas_height, canvas_width), Image.ANTIALIAS)
+  return np.array(im).transpose((2,0,1))
+
+
 def add_coord_map(input_tensor):
   # https://github.com/mkocabas/CoordConv-pytorch/blob/master/CoordConv.py
   """
@@ -570,6 +702,30 @@ def add_coord_map(input_tensor):
     xx_channel.type_as(input_tensor),
     yy_channel.type_as(input_tensor)], dim=1)
   return ret
+
+def show_pointcloud_errors(coords, errors, title='none', win=None, env='PYCHARM_RUN', markersize=3, max_points=10000,
+                    force_aspect_ratio=True, valid_mask=None, nice_plot_rotation=3):
+  if type(coords) is list:
+    assert type(errors) is list and type(title) is list
+    assert len(coords) == len(errors) and len(coords) == len(title)
+    # Normalize error colors together, so that they show the same color map
+    errors = np.array(errors)
+  else:
+    coords = [coords]
+    title = [title]
+    errors = errors[None,:,:]
+
+  assert coords[0].shape[1:] == errors[0].shape
+
+  color = np.array((255, 0, 0))
+  errors = errors.reshape((errors.shape[0], -1))
+  np_error_colors = np.array((errors/errors.max())[:, None,:]*color[None,:,None], dtype='uint8')
+
+  for k in range(len(coords)):
+    labels = ['Error: {}'.format(str(k)) for k in errors[k].flatten()]
+
+    show_pointcloud(coords[k].reshape((3,-1)), np_error_colors[k], title=title[k], win=win, env=env, markersize=markersize, max_points=max_points,
+                      force_aspect_ratio=force_aspect_ratio, valid_mask=valid_mask, nice_plot_rotation=nice_plot_rotation, labels=labels)
 
 def show_pointcloud(coords, np_colors=None, title='none', win=None, env='PYCHARM_RUN', markersize=3, max_points=10000,
                     force_aspect_ratio=True, valid_mask=None, nice_plot_rotation=3, labels=None):
@@ -608,6 +764,8 @@ def show_pointcloud(coords, np_colors=None, title='none', win=None, env='PYCHARM
     selected_positions = random.sample(range(coords.shape[0]), max_points)
     coords = coords[selected_positions]
     np_colors = np_colors[selected_positions]
+    if not labels is None:
+      labels = [labels[k] for k in selected_positions]
   if win is None:
     win = title
   if force_aspect_ratio:
@@ -742,7 +900,7 @@ def project_points_to_plane(data_points, p_n_0):
   return points_in_plane
 
 
-def fit_plane(data_points):
+def fit_plane_np(data_points):
   assert data_points.shape[0] == 3
   A = np.c_[data_points[0, :], data_points[1, :], np.ones(data_points.shape[1])]
   C, _, _, _ = lstsq(A, data_points[2, :])
@@ -779,17 +937,17 @@ def create_legend_classes(class_names, class_colors, class_ids, image=None):
 
   return image
 
-def fov_to_intrinsic_deg(fov_y_deg, width, height, return_inverse=True):
-  fov_y_rad = fov_y_deg/180.0*np.pi
-  return fov_to_intrinsic_rad(fov_y_rad, width, height, return_inverse=return_inverse)
+def fov_x_to_intrinsic_deg(fov_x_deg, width, height, return_inverse=True):
+  fov_y_rad = fov_x_deg / 180.0 * np.pi
+  return fov_x_to_intrinsic_rad(fov_y_rad, width, height, return_inverse=return_inverse)
 
 
-def fov_to_intrinsic_rad(fov_y_rad, width, height, return_inverse=True):
-  if type(fov_y_rad) is torch.Tensor:
-    f = width / (2 * torch.tan(fov_y_rad / 2))
-    zero = torch.FloatTensor(np.zeros(fov_y_rad.shape[0]))
-    one = torch.FloatTensor(np.ones(fov_y_rad.shape[0]))
-    if fov_y_rad.is_cuda:
+def fov_x_to_intrinsic_rad(fov_x_rad, width, height, return_inverse=True):
+  if type(fov_x_rad) is torch.Tensor:
+    f = width / (2 * torch.tan(fov_x_rad / 2))
+    zero = torch.FloatTensor(np.zeros(fov_x_rad.shape[0]))
+    one = torch.FloatTensor(np.ones(fov_x_rad.shape[0]))
+    if fov_x_rad.is_cuda:
       zero = zero.cuda()
       one = one.cuda()
     intrinsics_0 = torch.stack((f, zero, zero)).transpose(0,1)
@@ -797,13 +955,12 @@ def fov_to_intrinsic_rad(fov_y_rad, width, height, return_inverse=True):
     intrinsics_2 = torch.stack((width/2, height/2, one)).transpose(0,1)
     intrinsics = torch.cat((intrinsics_0[:,:,None], intrinsics_1[:,:,None], intrinsics_2[:,:,None]), dim=-1)
   else:
-    fx = width / (2 * np.tan(fov_y_rad / 2))
-    fy = height / (2 * np.tan(fov_y_rad / 2))
-    intrinsics = np.array(((fx, 0, width / 2),
-                         (0, fy, height / 2),
+    f = width / (2 * np.tan(fov_x_rad / 2))
+    intrinsics = np.array(((f, 0, width / 2),
+                         (0, f, height / 2),
                          (0,  0,         1)), dtype='float32')
   if return_inverse:
-    if type(fov_y_rad) is torch.Tensor:
+    if type(fov_x_rad) is torch.Tensor:
       return intrinsics, torch.inverse(intrinsics)
     else:
       return intrinsics, np.linalg.inv(intrinsics)
@@ -940,6 +1097,29 @@ def crop_center(img, crop):
   else:
     return img[starty:starty + cropy, startx:startx + cropx]
 
+def cv2_resize(image, target_shape, interpolation=cv2.INTER_NEAREST):
+  if len(image.shape) == 2:
+    return cv2.resize(image, target_shape[::-1], interpolation=interpolation)
+  else:
+    return cv2.resize(image.transpose((1, 2, 0)), target_shape[::-1], interpolation=interpolation).transpose((2, 0, 1))
+
+def best_centercrop_image(image, height, width, return_rescaled_size=False):
+  image_height, image_width = image.shape[-2:]
+  im_crop_height_shape = (int(height), int(image_width * height / image_height))
+  im_crop_width_shape = (int(image_height * width / image_width), int(width))
+  # if we crop on the height dimension, there must be enough pixels on the width
+  if im_crop_height_shape[1] >= width:
+    rescaled_size = im_crop_height_shape
+  else:
+    # crop over width
+    rescaled_size = im_crop_width_shape
+  resized_image = cv2_resize(image, rescaled_size)
+  center_cropped = crop_center(resized_image, (height, width))
+  if return_rescaled_size:
+    return center_cropped, rescaled_size
+  else:
+    return center_cropped
+
 
 def undo_img_normalization(img, dataset='movies'):
   if img.shape[0] == 1:
@@ -966,6 +1146,28 @@ def do_img_normalization(img, dataset='movies'):
     return (img - np.reshape(MovieSequenceDataset.getmean(),(3,1,1))) / np.reshape(MovieSequenceDataset.getstd(),(3,1,1))
   else:
     return (img - MovieSequenceDataset.getmean()) / MovieSequenceDataset.getstd()
+
+def find_cuda_leaks(active_refs_before, active_refs_after):
+  leaks = [k for k in active_refs_after if not id(k) in [id(r) for r in active_refs_before]]
+  return leaks
+
+def get_active_tensors(gpu_only=True):
+  import gc
+  all_tensors = []
+  for obj in gc.get_objects():
+    try:
+      if torch.is_tensor(obj):
+        tensor = obj
+      elif hasattr(obj, 'data') and torch.is_tensor(obj.data):
+        tensor = obj.data
+      else:
+        continue
+
+      if tensor.is_cuda or not gpu_only:
+        all_tensors.append(tensor)
+    except Exception as e:
+      pass
+  return all_tensors
 
 def tonumpy(tensor):
   if type(tensor) is np.ndarray:
@@ -1045,6 +1247,46 @@ def filter_horizontal_sift_matches(L_pts, R_pts, sim_distance, env = None, L_img
       matches, gray_R_img.copy(), flags=0)
     imshow(match_img / 255.0, title='all_sift_matches', env=env, biggest_dim=1000)
   return L_pts, R_pts, sim_distance
+
+
+def gaussian_blur_image(img, blur_pixels):
+  if len(img.shape) == 2:
+    return gaussian_filter(img, blur_pixels)
+  else:
+    assert img.shape[0] == 1 or img.shape[0] == 3
+    return np.array([gaussian_filter(img[k, :, :], blur_pixels) for k in range(img.shape[0])], dtype='float32')
+
+
+def detect_lines(img, return_line_and_edges_image=False):
+  # https://stackoverflow.com/questions/45322630/how-to-detect-lines-in-opencv
+  img_height = img.shape[1]
+  gray = cv2.cvtColor(img.transpose((1,2,0)), cv2.COLOR_BGR2GRAY)
+
+  kernel_size = 5
+  blur_gray = cv2.GaussianBlur(gray, (kernel_size, kernel_size), 0)
+  low_threshold = 100
+  high_threshold = 150
+
+  edges = cv2.Canny(blur_gray, low_threshold, high_threshold)
+
+  rho = 1  # distance resolution in pixels of the Hough grid
+  theta = np.pi / 180  # angular resolution in radians of the Hough grid
+  threshold = int(40*img_height/720) # minimum number of votes (intersections in Hough grid cell)
+  min_line_length = int(30*img_height/720)  # minimum number of pixels making up a line
+  max_line_gap = int(4*img_height/720)  # maximum gap in pixels between connectable line segments
+  line_image = np.copy(img) * 0  # creating a blank to draw lines on
+
+  # Run Hough on edge detected image
+  # Output "lines" is an array containing endpoints of detected line segments
+  lines = cv2.HoughLinesP(edges, rho, theta, threshold, np.array([]),
+                      min_line_length, max_line_gap)
+  if not return_line_and_edges_image:
+    return lines
+
+  for line in lines:
+    for x1,y1,x2,y2 in line:
+      line_image = add_line(line_image, (x1,y1), (x2,y2))
+  return lines, line_image, edges
 
 def get_sift_matches(gray_ref_img, gray_tgt_img, mask_ref_and_target=None, dist_threshold=-1, N_MATCHES=-1):
   try:
@@ -1204,6 +1446,7 @@ def load_json(file_name, replace_nans=False):
       json_string = json_string.replace('-nan', 'NaN').replace('nan', 'NaN')
     parsed_json = json.loads(json_string)
     return parsed_json
+
 def dump_json(json_dict, filename):
   with open(filename, 'w') as fp:
     json.dump(json_dict, fp, indent=4)
@@ -1375,10 +1618,14 @@ def zrotation_rad(th, four_dims=False):
     return np.array([[c, -s, 0, 0], [s, c, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
 
 def edges_semantic(semantic_instance_map):
+  from skimage import feature
+
   sk_edges = feature.canny(semantic_instance_map, sigma=1) * 1.0
   return sk_edges
 
 def edges_image(img):
+  from skimage import feature
+
   gray = cv2.cvtColor(img.transpose((1,2,0)), cv2.COLOR_BGR2GRAY)
   th, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 
@@ -1460,35 +1707,45 @@ def load_matlab_mat(filename):
   return loadmat(filename)
 
 
-def save_checkpoint(save_path, nets_to_save, is_best):
+def save_checkpoint_pickles(save_path, others_to_pickle, is_best):
+  for (prefix, object) in others_to_pickle.items():
+    dump_to_pickle(save_path / ('{}_latest.pckl').format(prefix), object)
+  if is_best:
+    for prefix in others_to_pickle.keys():
+      shutil.copyfile(save_path / ('{}_latest.pckl').format(prefix),
+                      save_path / ('{}_best.pckl').format(prefix))
+
+def save_checkpoint(save_path, nets_to_save, is_best, other_objects_to_pickle=None):
   for (prefix, state) in nets_to_save.items():
     torch.save(state, save_path / ('{}_model_latest.pth.tar').format(prefix))
   if is_best:
     for prefix in nets_to_save.keys():
       shutil.copyfile(save_path / ('{}_model_latest.pth.tar').format(prefix),
                       save_path / ('{}_model_best.pth.tar').format(prefix))
+  if not other_objects_to_pickle is None:
+    save_checkpoint_pickles(save_path, other_objects_to_pickle, is_best)
   print('Saved in: ' + save_path)
 
 def reject_outliers(data, m=2):
   return data[abs(data - np.mean(data)) < m * np.std(data)]
 
+
 if __name__ == '__main__':
-  coords = np.zeros((10000, 3), dtype='float32')
-  for k in range(1000):
-    show_pointcloud(coords)
-    print(k)
-  #dataset = subset_frames(get_dataset=True, width=240)
-  #for i in range(len(dataset)):
-  #  ref_img, tgt_imgs, intrinsics, intrinsics_inv, filename, base_index = dataset.__getitem__(i)#range(len(dataset))[-20])
-  #  tgt_img = tgt_imgs[1]
-  #  compute_sift_image(ref_img, tgt_img, mask=None, make_plots=True)
+  test_image = 'imgs_to_test/img_9294.jpg'
+  img = scale_img_to_fit_canvas(cv2_imread(test_image), 720, 720)
 
-  from scipy.io import loadmat
-  colors = load_matlab_mat('data/color150.mat')['colors']
-  import csv
+  detect_lines(img)
 
-  with open('data/object150_info.csv', 'r') as f:
-    reader = csv.reader(f, delimiter=',')
-    next(reader)
-    object_names = [k[-1].split(';')[0] for k in list(reader)]
-  create_legend_classes(object_names, colors, range(150))
+  import time
+  then = time.time()
+  for k in range(100):
+    img = load_image_tile(panoramic_image, 0, 1024, 0, 2048)
+  print("full loading time: {}".format(time.time() - then))
+  then = time.time()
+  for k in range(100):
+    tile = load_image_tile(panoramic_image, 500, 600, 500, 600)
+  print("Loading tile time: {}".format(time.time() - then))
+  imshow(tile, biggest_dim=600, title='tile')
+  imshow(img, biggest_dim=600, title='img')
+  while True:
+    a = 1
