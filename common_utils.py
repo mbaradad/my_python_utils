@@ -1,8 +1,10 @@
 #force 3.5 div to make it compatible with both 2.7 and 3.5
 from __future__ import division
-#TODO: move imports to functions, to make loading faster
-from _curses import raw
-#import open3d as o3d
+# we need to import this before torch:
+# https://github.com/pytorch/pytorch/issues/19739
+import open3d as o3d
+import torch
+from pathlib import Path
 
 try:
   import cPickle as pickle
@@ -21,15 +23,17 @@ import random
 import argparse
 import matplotlib
 from my_python_utils.visdom_visualizations import *
+from my_python_utils.flow_utils.flowlib import *
+from my_python_utils.visdom_visualizations import visdom_default_window_title_and_vis
 
-from imageio import imwrite
 from scipy import misc
 import struct
+from pathlib import Path
 
 from scipy.ndimage.filters import gaussian_filter
 
 import imageio
-import torch
+
 import numpy as np
 from PIL import Image, ImageDraw
 
@@ -46,7 +50,7 @@ from scipy.linalg import lstsq
 import socket
 
 global VISDOM_BIGGEST_DIM
-VISDOM_BIGGEST_DIM = 300
+VISDOM_BIGGEST_DIM = 600
 
 def get_hostname():
   return socket.gethostname()
@@ -80,10 +84,15 @@ def thread_safe_read_text_file_lines(filename):
     lock.release()
   return lines
 
-def read_text_file_lines(filename):
+def touch(file):
+  Path(file).touch()
+
+def read_text_file_lines(filename, stop_at=-1):
   lines = list()
   with open(filename, 'r') as f:
     for line in f:
+      if stop_at > 0 and len(lines) >= stop_at:
+        return lines
       lines.append(line.replace('\n',''))
   return lines
 
@@ -121,14 +130,13 @@ def tensor2array(tensor, max_value=255, colormap='rainbow'):
         array = 0.5 + tensor.numpy().transpose(1, 2, 0)*0.5
     return array
 
-def is_headless_execution():
+def is_headed_execution():
   #if there is a display, we are running locally
   return 'DISPLAY' in os.environ.keys()
-if not is_headless_execution():
+if not is_headed_execution():
   with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     matplotlib.use('Agg')
-
 
 def chunk_list(seq, num):
   avg = len(seq) / float(num)
@@ -160,13 +168,23 @@ def load_image_tile(filename, top, bottom, left, right, dtype='uint8'):
                      shape=[roi.height, roi.width, roi.bands])
   return nparr
 
-def cv2_imwrite(im, file, rgb=True, normalize=False):
-  if len(im.shape) == 3 and im.shape[0] == 3:
+def cv2_imwrite(im, file, normalize=False, jpg_quality=None):
+  if len(im.shape) == 3 and im.shape[0] == 3 or im.shape[0] == 4:
     im = im.transpose(1, 2, 0)
   if normalize:
     im = (im - im.min())/(im.max() - im.min())
     im = np.array(255.0*im, dtype='uint8')
-  imwrite(file, im)
+  if jpg_quality is None:
+    # The default jpg quality seems to be 95
+    if im.shape[-1] == 3:
+      cv2.imwrite(file, im[:,:,::-1])
+    else:
+      raise Exception('Alpha not working correctly')
+      im_reversed = np.concatenate((im[:,:,3:0:-1], im[:,:,-2:-1]), axis=2)
+      cv2.imwrite(file, im_reversed)
+  else:
+    cv2.imwrite(file, im[:,:,::-1], [int(cv2.IMWRITE_JPEG_QUALITY), jpg_quality])
+
 
 def merge_side_by_side(im1, im2):
   assert im1.shape == im2.shape
@@ -175,55 +193,73 @@ def merge_side_by_side(im1, im2):
   im_canvas[:,:,im1.shape[-1]:] = im2
   return im_canvas
 
+
 def visdom_histogram(array, win=None, title=None, env='PYCHARM_RUN', vis=None):
+  if type(array) is list:
+    array = np.array(array)
   if vis is None:
     vis = global_vis
+  array = array.flatten()
+
+  win, title, vis = visdom_default_window_title_and_vis(win, title, vis)
+
   opt = dict()
-  if not title is None:
-    opt['title'] = title
-  else:
-    opt['title'] = str(win)
-  if win is None:
-    win = title
+  opt['title'] = title
   vis.histogram(array, env=env, win=win, opts=opt)
 
 
 def visdom_barplot(array, env='PYCHARM_RUN', win=None, title=None, vis=None):
   if vis is None:
     vis = global_vis
+
+  win, title, vis = visdom_default_window_title_and_vis(win, title, vis)
+
   opt = dict()
-  if not title is None:
-    opt['title'] = title
-  else:
-    opt['title'] = str(win)
-  if win is None:
-    win = title
+  opt['title'] = str(win)
   vis.bar(array, env=env, win=win, opts=opt)
 
 def visdom_bar_plot(array, rownames=None, env='PYCHARM_RUN', win=None, title=None, vis=None):
   if vis is None:
     vis = global_vis
+
+  win, title, vis = visdom_default_window_title_and_vis(win, title, vis)
+
   opt = dict()
-  if not title is None:
-    opt['title'] = title
-  else:
-    opt['title'] = str(win)
-  if win is None:
-    win = title
+  opt['title'] = title
   if not rownames is None:
     opt['rownames'] = rownames
   vis.bar(array, env=env, win=win, opts=opt)
 
 
-def visdom_boxplot(array, env='main', win='test', title=None, vis=None):
+def visdom_boxplot(array, env='PYCHARM_RUN', win='test', title=None, vis=None):
   if vis is None:
     vis = global_vis
+
+  win, title, vis = visdom_default_window_title_and_vis(win, title, vis)
+
   opt = dict()
-  if not title is None:
-    opt['title'] = title
-  else:
-    opt['title'] = str(win)
   vis.boxplot(array, env=env, win=win, opts=opt)
+
+def visdom_line(arrays, X=None, names=None, env='PYCHARM_RUN', win=None, title=None, vis=None):
+  if vis is None:
+    vis = global_vis
+
+  win, title, vis = visdom_default_window_title_and_vis(win, title, vis)
+
+  opt = dict()
+  opt['fillarea'] = False
+  if not names is None:
+    opt['legend'] = names
+  if type(arrays) is list:
+    arrays = np.array(arrays)
+    arrays = arrays.transpose()
+  else:
+    # inner dimension is the data, but visdom expects the opposite
+    arrays = arrays.transpose()
+  vis.line(np.array(arrays), X=X, env=env, win=win, opts=opt)
+
+def save_visdom_plot(win, save_path):
+  return
 
 def touch(fname, times=None):
   with open(fname, 'a'):
@@ -252,7 +288,6 @@ def get_image_width_height_fast_jpg(filename):
     # calculate width
     width = (a[0] << 8) + a[1]
   return width, height
-
 
 
 class UnknownImageFormat(Exception):
@@ -325,6 +360,10 @@ def tile_images(imgs, tiles, tile_size):
   for i in range(tiles[0]):
     for j in range(tiles[1]):
       tile = myimresize(imgs[k], tile_size)
+      if len(tile.shape) == 2:
+        tile = tile[None,:,:]
+      if tile.shape[0] == 1:
+        tile = np.concatenate((tile, tile, tile))
       final_img[:, i*tile_size[0]:(i+1)*tile_size[0],j*tile_size[1]:(j+1)*tile_size[1]] = tile
       k = k + 1
       if k >= n_imgs:
@@ -339,13 +378,32 @@ def str2intlist(v):
  return [int(k) for k in v.split(',')]
 
 
+def cross_product_mat_sub_x_torch(v):
+  assert len(v.shape) == 3 and v.shape[1:] == (3,1)
+  batch_size = v.shape[0]
+  zero = torch.zeros((batch_size, 1))
+  sub_x_mat = torch.cat((torch.cat((zero, -v[:, 2], v[:,1]), axis=1)[:,None,:],
+                         torch.cat((v[:, 2], zero, -v[:,0]), axis=1)[:,None,:],
+                         torch.cat((-v[:, 1],  v[:,0], zero), axis=1)[:,None,:]), axis=1)
+  return sub_x_mat
+
+  return np.array([(0, -float(v[2]), float(v[1])),
+                   (float(v[2]), 0, -float(v[0])),
+                   (-float(v[1]), float(v[0]), 0)])
+
+def cross_product_mat_sub_x_np(v):
+  assert v.shape == (3,1)
+  return np.array([(0, -float(v[2]), float(v[1])),
+                   (float(v[2]), 0, -float(v[0])),
+                   (-float(v[1]), float(v[0]), 0)])
+
 def str2bool(v):
   if v.lower() in ('yes', 'true', 't', 'y', '1'):
     return True
   elif v.lower() in ('no', 'false', 'f', 'n', '0'):
     return False
   else:
-    raise argparse.ArgumentTypeError('Boolean value expected.')
+    raise argparse.ArgumentTypeError('Boolean (yes, true, t, y or 1, lower or upper case) string expected.')
 
 
 def add_2d_bbox(im, min_corner_xy, max_corner_xy, color):
@@ -367,10 +425,14 @@ def add_line(im, origin_x_y, end_x_y, color=(255, 0, 0)):
 
   return np.array(im).transpose()
 
+def add_arrow(im, origin_x_y, end_x_y, color=(255, 0, 0), width=5):
+  im_copy = np.array(im)
+  im_with_arrow = cv2.arrowedLine(im_copy.transpose((1,2,0)), tuple(np.array(origin_x_y, dtype='int')), tuple(np.array(end_x_y, dtype='int')), color, width).transpose((2,0,1))
+  return im_with_arrow
+
 
 def add_circle(im, centers_x_y, radius=5, color=(255, 0, 0)):
-  im = Image.fromarray(im.transpose())
-  draw = ImageDraw.Draw(im)
+  im_copy = np.array(im)
   if not type(centers_x_y) is list:
     centers_x_y = [centers_x_y]
   for i in range(len(centers_x_y)):
@@ -379,9 +441,9 @@ def add_circle(im, centers_x_y, radius=5, color=(255, 0, 0)):
       actual_color = tuple(color[i])
     else:
       actual_color = color
-    draw.ellipse((center_x_y[1] - radius, center_x_y[0] - radius, center_x_y[1] + radius, center_x_y[0] + radius), fill=actual_color)
+    im_with_circle = cv2.circle(im_copy.transpose((1, 2, 0)), tuple(np.array(center_x_y, dtype='int')), radius, actual_color).transpose((2, 0, 1))
 
-  return np.array(im).transpose()
+  return im_with_circle
 
 def text_editor():
   txt = 'This is a write demo notepad. Type below. Delete clears text:<br>'
@@ -447,7 +509,11 @@ def line_selector_x_y(img, window):
     time.sleep(0.02)
   return first, second
 
-def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, window=None, env='PYCHARM_RUN', fps=None, vis=None, add_ranges=False, return_image=False):
+def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, window=None, env='PYCHARM_RUN', fps=10, vis=None, add_ranges=False, return_image=False):
+  if type(im) is list:
+    for k in range(len(im)):
+      im[k] = tonumpy(im[k])
+    im = np.array(im)
   if 'VISDOM_BIGGEST_DIM' in globals() and biggest_dim is None:
     global VISDOM_BIGGEST_DIM
     biggest_dim = VISDOM_BIGGEST_DIM
@@ -485,7 +551,7 @@ def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True, 
     if len(im.shape) == 4:
       vidshow_vis(im, title=title, window=window, env=env, vis=vis, biggest_dim=biggest_dim, fps=fps)
     else:
-      imshow_vis(im, title=title + postfix, window=window, env=env, vis=vis)
+      imshow_vis(im, title=title + postfix, win=window, env=env, vis=vis)
   else:
     if len(im.shape) == 4:
       make_gif(im, path=path, fps=fps, biggest_dim=biggest_dim)
@@ -517,6 +583,17 @@ def list_of_lists_into_single_list(list_of_lists):
   flat_list = [item for sublist in list_of_lists for item in sublist]
   return flat_list
 
+
+def find_all_files_recursively(folder, prepend_path=False, extension=None, progress=False):
+  if extension is None:
+    glob_expresion = '*'
+  else:
+    glob_expresion = '*' + extension
+  all_files = []
+  for f in Path(folder).rglob(glob_expresion):
+    all_files.append((str(f) if prepend_path else f.name))
+  return all_files
+
 def interlace(list_of_lists):
   #all elements same length
   assert len(set([len(k) for k in list_of_lists])) <= 1
@@ -538,6 +615,18 @@ def str2img(string_to_print, height=100, width=100):
 def count_trainable_parameters(network):
   n_parameters = sum(p.numel() for p in network.parameters() if p.requires_grad)
   return n_parameters
+
+def look_at_to_extrinsics_mat(camera_pos, look_at, up_vector, right_vector):
+  # https://learnopengl.com/Getting-started/Camera
+  assert len(right_vector.shape) == 1 and camera_pos.shape[0] == look_at.shape[0] == up_vector.shape[0] == right_vector.shape[0] == 3
+  a1 = np.eye((4, 4))
+  a2 = np.eye((4, 4))
+  a1[0, :3] = right_vector
+  a1[1, :3] = up_vector
+  a1[2, :3] = up_vector
+  a2[:3, 3] = -1 * camera_pos
+  look_at = np.matmul(a1, a2)
+  return look_at
 
 def create_plane_pointcloud_coords(center, normal, extent, samples, color=(0,0,0)):
   if normal[0] == 0 and normal[1] == 0:
@@ -666,6 +755,326 @@ def add_camera_to_pointcloud(position, rotation, focal_deg_vert, width, height, 
     new_colors = np.array([camera_color]*len(all_coords), dtype='uint8')
     return np.concatenate((coords, all_coords)), np.concatenate((np_colors, new_colors))
 
+
+def create_camera(height, width, fov_x_deg=None):
+  actual_camera = o3d.camera.PinholeCameraParameters()
+  if fov_x_deg is None:
+    fx = width / 2
+    fy = width / 2
+    cx = width / 2 - 0.5
+    cy = height / 2 - 0.5
+  else:
+    intrinsics_mat = fov_x_to_intrinsic_deg(height=height, width=width, fov_x_deg=fov_x_deg, return_inverse=False)
+    fx = intrinsics_mat[0,0]
+    fy = intrinsics_mat[1,1]
+    cx = intrinsics_mat[0,2]
+    cy = intrinsics_mat[1,2]
+  actual_camera.intrinsic = o3d.camera.PinholeCameraIntrinsic(width, height, fx, fy, cx, cy)
+
+  return actual_camera
+
+
+def create_static_trajectory(init_pos, height, width, samples = 100):
+  cams = []
+  for k in range(samples):
+    actual_camera = create_camera(height, width)
+
+    extrinsic = np.zeros((4,4))
+    extrinsic[:3,:3] = xrotation_deg(-30*k/samples)
+    extrinsic[:3,3] = init_pos + np.array((0, 0.5*k/samples, 0))
+    extrinsic[3, 3] = 1
+    actual_camera.extrinsic = extrinsic
+    cams.append(actual_camera)
+  for k in range(samples):
+    actual_camera = create_camera(height, width)
+
+    extrinsic = np.zeros((4,4))
+    extrinsic[:3,:3] = xrotation_deg(-30*(samples - k - 1)/samples)
+    extrinsic[:3,3] = init_pos + np.array((0, 0.5*(samples - k - 1)/samples, 0))
+    extrinsic[3, 3] = 1
+    actual_camera.extrinsic = extrinsic
+    cams.append(actual_camera)
+
+  trajectory = o3d.camera.PinholeCameraTrajectory()
+  trajectory.parameters = cams
+
+  return trajectory
+
+default_camera_trajectory_file = 'normals_and_height/visualization/default_trajectory.json'
+def create_default_trajectory(init_pos, height, width, samples=100):
+  if os.path.exists(default_camera_trajectory_file):
+    trajectory = o3d.io.read_pinhole_camera_trajectory(default_camera_trajectory_file)
+    # remove static things
+    final_trajectory_cams = []
+    for k in range(len(trajectory.parameters) - 1):
+      extrinsic_diff = np.abs((trajectory.parameters[k].extrinsic - trajectory.parameters[k + 1].extrinsic)).sum()
+      if extrinsic_diff > 0.01:
+        final_trajectory_cams.append(trajectory.parameters[k])
+    trajectory.parameters = final_trajectory_cams
+  else:
+    cams = []
+    for k in range(samples):
+      actual_camera = create_camera(height, width)
+
+      extrinsic = np.zeros((4,4))
+      extrinsic[:3,:3] = xrotation_deg(-30*k/samples)
+      extrinsic[:3,3] = init_pos + np.array((0, 0.5*k/samples, 0))
+      extrinsic[3, 3] = 1
+      actual_camera.extrinsic = extrinsic
+      cams.append(actual_camera)
+
+    trajectory = o3d.camera.PinholeCameraTrajectory()
+    trajectory.parameters = cams
+
+  return trajectory
+
+def open3d_translation_transform(translation):
+  assert len(translation.shape) == 1 and translation.shape[0] == 3
+
+  transform = np.eye(4)
+  transform[:3,3] = translation
+
+  return transform
+
+def transform_to_o3d_trajectory(trajectory, height, width, example_trajectory):
+  cams = []
+  for params in trajectory:
+    actual_camera = create_camera(height, width) #, fov_x_deg=params['h_fov_deg'])
+
+    extrinsic = np.zeros((4,4))
+    yaw_deg, pitch_deg, roll_deg = np.rad2deg(params['yaw_rad']), np.rad2deg(params['pitch_rad']), np.rad2deg(params['roll_rad'])
+    R = zrotation_deg(roll_deg + 180) @ xrotation_deg(pitch_deg) @ yrotation_deg(yaw_deg + 180)
+    extrinsic[:3,:3] = R
+    # https://math.stackexchange.com/questions/82602/how-to-find-camera-position-and-rotation-from-a-4x4-matrix
+    C = np.array((params['pos'][0], params['height'], -1*params['pos'][1]))
+    T = -1 * R @ C[:, None]
+    extrinsic[:3,3] = T[:,0]
+    extrinsic[3, 3] = 1
+    actual_camera.extrinsic = extrinsic
+    cams.append(actual_camera)
+
+  trajectory = o3d.camera.PinholeCameraTrajectory()
+  trajectory.parameters = cams
+
+  return trajectory
+
+def custom_draw_geometry_with_camera_trajectory(trajectory, pcd, video_writer=None, background_color=(129, 125, 125),
+                                                render_height=1080, render_width=1920, axis=False,
+                                                break_after_completion=True, meshify=True, add_y_0_plane=False):
+  custom_draw_geometry_with_camera_trajectory.index = -1
+  initial_pos = np.array((0,0.7,0))
+
+  example_trajectory = create_default_trajectory(initial_pos, render_height, render_width)
+  custom_draw_geometry_with_camera_trajectory.trajectory = transform_to_o3d_trajectory(trajectory, render_height, render_width, example_trajectory)
+  custom_draw_geometry_with_camera_trajectory.vis = o3d.visualization.Visualizer()
+  images = []
+  video_writer = video_writer
+
+  def move_forward(vis, y_0_plane):
+    # This function is called within the o3d.visualization.Visualizer::run() loop
+    # The run loop calls the function, then re-render
+    # So the sequence in this function is to:
+    # 1. Capture frame
+    # 2. index++, check ending criteria
+    # 3. Set camera
+    # 4. (Re-render)
+    ctr = vis.get_view_control()
+    glb = custom_draw_geometry_with_camera_trajectory
+    if glb.index >= 0:
+      image = vis.capture_screen_float_buffer(False)
+      current_frame = np.array(image)
+      if video_writer is None:
+        images.append(current_frame)
+      else:
+         video_writer.writeFrame(np.array(current_frame*255, dtype='uint8'))
+    glb.index = glb.index + 1
+    if not y_0_plane is None:
+      total_steps = 40
+      if glb.index % total_steps == 0:
+        vis.remove_geometry(y_0_plane)
+      if glb.index % total_steps == total_steps // 2:
+        vis.add_geometry(y_0_plane)
+    if glb.index < len(glb.trajectory.parameters):
+      ctr.convert_from_pinhole_camera_parameters(glb.trajectory.parameters[glb.index])
+    else:
+      if break_after_completion:
+        custom_draw_geometry_with_camera_trajectory.vis.register_animation_callback(None)
+        raise Exception("Finished!")
+    return False
+
+  vis = custom_draw_geometry_with_camera_trajectory.vis
+  vis.create_window(width=render_width, height=render_height, left=0, top=0)
+  if meshify:
+    pcd_with_normals = o3d.geometry.PointCloud(pcd)
+    pcd_with_normals.estimate_normals()
+    pcd_with_normals.orient_normals_towards_camera_location(np.array((0,1,0)))
+    #orient_normals_towards_camera_location(())
+    radius = 0.03
+    mesh_from_pcd = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(pcd_with_normals,
+                                                                                    o3d.utility.DoubleVector([radius, radius * 2]))
+    vis.add_geometry(mesh_from_pcd)
+    vis.add_geometry(pcd)
+  else:
+    vis.add_geometry(pcd)
+  if axis:
+    mesh_coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=2.0)
+    vis.add_geometry(mesh_coord_frame)
+  if add_y_0_plane:
+    size = 25
+    floor = o3d.geometry.TriangleMesh.create_box(width=size, height=0.01, depth=size)
+    floor.paint_uniform_color([0.4, 0.4, 0.4])
+
+    floor.transform(open3d_translation_transform(np.array((-size/2, 0, -size/2))))
+  else:
+    floor = None
+  render_option = vis.get_render_option()
+  render_option.load_from_json("/data/vision/torralba/movies_sfm/home/Downloads/Open3D/examples/TestData/renderoption.json")
+  render_option.background_color = np.array(background_color) / 255.0
+  render_option.point_size = 5.0
+  vis.register_animation_callback(lambda x: move_forward(x, floor))
+  try:
+    vis.run()
+  except:
+    pass
+  vis.destroy_window()
+  return
+
+
+# modified from open3d headles_rendering example
+def record_camera_trajectory(initial_pos, pcd,
+                             background_color=(129, 125,125), render_height=1080, render_width=1920):
+    record_camera_trajectory.index = -1
+    # just the initial camera
+    record_camera_trajectory.trajectory = create_default_trajectory(initial_pos, render_height, render_width)
+    record_camera_trajectory.trajectory.parameters = record_camera_trajectory.trajectory.parameters[0:1]
+
+    record_camera_trajectory.vis = o3d.visualization.Visualizer()
+    images = []
+    global cameras
+    global default_camera_trajectory_file
+
+    cameras = []
+
+    def record_camera(vis):
+        # This function is called within the o3d.visualization.Visualizer::run() loop
+        # The run loop calls the function, then re-render
+        # So the sequence in this function is to:
+        # 1. Capture frame
+        # 2. index++, check ending criteria
+        # 3. Set camera
+        # 4. (Re-render)
+        ctr = vis.get_view_control()
+        glb = record_camera_trajectory
+        if glb.index >= 0:
+            image = vis.capture_screen_float_buffer(False)
+            images.append(np.array(image))
+        glb.index = glb.index + 1
+        if glb.index < len(glb.trajectory.parameters):
+            ctr.convert_from_pinhole_camera_parameters(glb.trajectory.parameters[glb.index])
+        cameras.append(ctr.convert_to_pinhole_camera_parameters())
+        current_traj = o3d.camera.PinholeCameraTrajectory()
+        current_traj.parameters = cameras
+        o3d.io.write_pinhole_camera_trajectory(default_camera_trajectory_file, current_traj)
+        return False
+
+    vis = record_camera_trajectory.vis
+    vis.create_window(width=render_width, height=render_height , left=0, top=0)
+    vis.add_geometry(pcd)
+    render_option = vis.get_render_option()
+    render_option.background_color = np.array(background_color)/255.0
+    render_option.load_from_json("/data/vision/torralba/movies_sfm/home/Downloads/Open3D/examples/TestData/renderoption.json")
+    render_option.point_size = 5.0
+    vis.register_animation_callback(record_camera)
+    try:
+      vis.run()
+    except Exception as e:
+      pass
+    vis.destroy_window()
+    return images
+
+
+def draw_horizon_line(image, rotation_mat=None, pitch_angle=None, roll_angle=None, intrinsic=None, force_no_roll=False, color=(255,0,0)):
+  #the horizon is the perpendicular of the line of the vanishing x and y axes
+  if rotation_mat is None:
+    roll_rotations = zrotation_deg(-1 * float(roll_angle))
+    pitch_rotations = xrotation_deg(float(pitch_angle))
+    rotation_mat = pitch_rotations @ roll_rotations
+  assert image.dtype == 'uint8'
+  original_image_shape = image.shape
+  desired_width = 1000
+  scale = desired_width / image.shape[1]
+  image = cv2_resize(image, (int(scale*image.shape[2]), int(scale*image.shape[1])))
+  height, width = image.shape[1:]
+  image = np.ascontiguousarray(tonumpy(image))
+  if intrinsic is None:
+    intrinsic = np.array(((width, 0, width / 2.0),
+                          (0, height, height / 2.0),
+                          (0, 0, 1)))
+
+  #the ground plane is the xy
+  projection_mat = np.matmul(intrinsic, rotation_mat)
+  vanishing_x = np.matmul(projection_mat, np.array((1,0,0)))
+  vanishing_z = np.matmul(projection_mat, np.array((0,0,1)))
+
+  if vanishing_x[2] == 0 or vanishing_z[2] == 0:
+    vanishing_direction = np.array((1,0))
+  else:
+    vanishing_x_image_plane = vanishing_x[:2]/vanishing_x[2]
+    vanishing_z_image_plane = vanishing_z[:2]/vanishing_z[2]
+
+    vanishing_direction = vanishing_z_image_plane - vanishing_x_image_plane
+
+  if force_no_roll:
+    vanishing_direction = np.array((1,0))
+
+  start_y = vanishing_z_image_plane[1] - vanishing_z_image_plane[1]*vanishing_direction[1]/vanishing_direction[0]
+  finish_y = vanishing_z_image_plane[1] + (width - vanishing_z_image_plane[1])*vanishing_direction[1]/vanishing_direction[0]
+  im = Image.fromarray(image.transpose((1,2,0)))
+  draw = ImageDraw.Draw(im)
+  draw.line((0, start_y, im.size[0], finish_y), fill=color, width=10)
+  image_with_line = np.array(im).transpose((2,0,1))
+  return image_with_line
+
+
+# open nvidia-xorg
+# sudo apt-get install xserver-xorg
+# configure xorg to use nvidia
+# sudo nvidia-xconfig -a --use-display-device=None --virtual=1280x1024
+# sudo /usr/bin/X :1
+# then, while running the script
+# sudo apt-get install x11vnc
+# x11vnc -display :1
+# then open vncviewer remotely
+
+
+def create_video_from_pointcloud_and_trajectory(original_coords, original_colors, trajectory,
+                                                video_writer=None, background_color=(255, 255, 255), display_number=1, meshify=True):
+  coords, colors = prepare_single_pointcloud_and_colors(original_coords, original_colors)
+  coords[:, 1] = -1 * coords[:, 1]
+  coords[:, 2] = -1 * coords[:, 2]
+  pcd = o3d.geometry.PointCloud()
+  pcd.points = o3d.utility.Vector3dVector(coords)
+  if colors.dtype == 'uint8':
+    colors = colors / 255.0
+  #colors = np.concatenate((colors, np.ones((colors.shape[0], 1))), axis=1)
+  pcd.colors = o3d.utility.Vector3dVector(colors)
+  try:
+    os.environ['DISPLAY'] = ':' + str(display_number)
+    custom_draw_geometry_with_camera_trajectory(trajectory, pcd, video_writer=video_writer,
+                                                background_color=background_color, render_height=int(1080/2), render_width=int(1920/2), meshify=meshify)
+    if not video_writer is None:
+      video_writer.close()
+  except Exception as e:
+    print("Failed to render on display :{}".format(display_number))
+    print(e)
+  return
+
+def np_where_in_multiple_dimensions(true_false_array):
+  indices = np.where(true_false_array.flatten())
+  unraveled_indices = np.unravel_index(indices, true_false_array.shape)
+
+  return np.array(unraveled_indices)[:,0,:].transpose()
+
 def get_grads(network):
   params = list(network.parameters())
   grads = [p.grad for p in params]
@@ -675,6 +1084,14 @@ def scale_img_to_fit_canvas(img, canvas_height, canvas_width):
   im = Image.fromarray(img.transpose((1,2,0)))
   im.thumbnail((canvas_height, canvas_width), Image.ANTIALIAS)
   return np.array(im).transpose((2,0,1))
+
+
+def create_text_image(lines, line_size=(50,500), color=(0, 0, 0)):
+  im = 255*np.ones((line_size[0]*len(lines), line_size[1], 3), dtype='uint8')
+  font = cv2.FONT_HERSHEY_TRIPLEX
+  for k in range(len(lines)):
+    im = cv2.putText(im, lines[k], (10, line_size[0]*(k + 1) - 10), font, 1, color, 2, cv2.LINE_AA)
+  return im
 
 
 def add_coord_map(input_tensor):
@@ -703,8 +1120,15 @@ def add_coord_map(input_tensor):
     yy_channel.type_as(input_tensor)], dim=1)
   return ret
 
+def rotate_pointcloud(pcl, rotation_mat):
+  original_pcl_shape = pcl.shape
+  assert original_pcl_shape[0] == 3
+  assert rotation_mat.shape == (3,3)
+  flattened_pcl = pcl.reshape((3,-1))
+  return np.matmul(rotation_mat, flattened_pcl).reshape(original_pcl_shape)
+
 def show_pointcloud_errors(coords, errors, title='none', win=None, env='PYCHARM_RUN', markersize=3, max_points=10000,
-                    force_aspect_ratio=True, valid_mask=None, nice_plot_rotation=3):
+                    force_aspect_ratio=True, valid_mask=None):
   if type(coords) is list:
     assert type(errors) is list and type(title) is list
     assert len(coords) == len(errors) and len(coords) == len(title)
@@ -727,114 +1151,211 @@ def show_pointcloud_errors(coords, errors, title='none', win=None, env='PYCHARM_
     show_pointcloud(coords[k].reshape((3,-1)), np_error_colors[k], title=title[k], win=win, env=env, markersize=markersize, max_points=max_points,
                       force_aspect_ratio=force_aspect_ratio, valid_mask=valid_mask, nice_plot_rotation=nice_plot_rotation, labels=labels)
 
-def show_pointcloud(coords, np_colors=None, title='none', win=None, env='PYCHARM_RUN', markersize=3, max_points=10000,
-                    force_aspect_ratio=True, valid_mask=None, nice_plot_rotation=3, labels=None):
-  if np_colors is None:
-    np_colors = np.ones(coords.shape)
-  coords = tonumpy(coords)
-  np_colors = tonumpy(np_colors)
-  if np_colors.dtype == 'float32':
-    if np_colors.max() > 1.0:
-      np_colors = np.array(np_colors, dtype='uint8')
-    else:
-      np_colors = np.array(np_colors * 255.0, dtype='uint8')
+
+def prepare_pointclouds_and_colors(coords, colors, default_color=(0,0,0)):
   if type(coords) is list:
-    for k in range(len(np_colors)):
-      if np_colors[k] is None:
-        np_colors[k] = np.ones(coords[k].shape)
-    np_colors = np.concatenate(np_colors, axis=0)
+    for k in range(len(coords)):
+      assert len(coords) == len(colors)
+      coords[k], colors[k] = prepare_single_pointcloud_and_colors(coords[k], colors[k], default_color)
+    return coords, colors
+  else:
+    return prepare_single_pointcloud_and_colors(coords, colors, default_color)
+
+def prepare_single_pointcloud_and_colors(coords, colors, default_color=(0,0,0)):
+  if colors is None:
+    colors = np.ones(coords.shape)*np.array((default_color))
+  coords = tonumpy(coords)
+  colors = tonumpy(colors)
+  if colors.dtype == 'float32':
+    if colors.max() > 1.0:
+      colors = np.array(colors, dtype='uint8')
+    else:
+      colors = np.array(colors * 255.0, dtype='uint8')
+  if type(coords) is list:
+    for k in range(len(colors)):
+      if colors[k] is None:
+        colors[k] = np.ones(coords[k].shape)
+    colors = np.concatenate(colors, axis=0)
     coords = np.concatenate(coords, axis=0)
 
-  assert coords.shape == np_colors.shape
+  assert coords.shape == colors.shape
   if len(coords.shape) == 3:
     coords = coords.reshape((3, -1))
-  if len(np_colors.shape) == 3:
-    np_colors = np_colors.reshape((3, -1))
+  if len(colors.shape) == 3:
+    colors = colors.reshape((3, -1))
   assert len(coords.shape) == 2
   if coords.shape[0] == 3:
     coords = coords.transpose()
-    np_colors = np_colors.transpose()
+    colors = colors.transpose()
+  return coords, colors
 
+def get_plane_pointcloud(plane_params, x_extension=None, y_extension=None, z_extension=None, color=(0,0,0), n_points=100):
+  assert ((x_extension is None) + (y_extension is None) + (z_extension is None)) == 1
+  if x_extension is None:
+    y, z = np.mgrid[y_extension[0]:y_extension[1]:complex(n_points), z_extension[0]:z_extension[1]:complex(n_points)]
+    x = -(y*plane_params[1] + z*plane_params[2] + plane_params[3])/plane_params[0]
+  elif y_extension is None:
+    z, x = np.mgrid[z_extension[0]:z_extension[1]:complex(n_points), x_extension[0]:x_extension[1]:complex(n_points)]
+    y = -(x * plane_params[0] + z * plane_params[2] + plane_params[3]) / plane_params[1]
+  else:
+    y, x = np.mgrid[y_extension[0]:y_extension[1]:complex(n_points), x_extension[0]:x_extension[1]:complex(n_points)]
+    z = -(x * plane_params[0] + y * plane_params[1] + plane_params[3]) / plane_params[2]
+
+  points = np.concatenate((x[None,:,:], y[None,:,:], z[None,:,:])).reshape(3, -1)
+  colors = np.array([np.array(color)]*points.shape[1]).transpose()
+  return points, colors
+
+
+def show_pointcloud(original_coords, original_colors=None, title='none', win=None, env='PYCHARM_RUN',
+                    markersize=3, max_points=10000, valid_mask=None, labels=None, default_color=(0,0,0),
+                    projection="orthographic", center=(0,0,0), up=(0,-1,0), eye=(0,0,-2), display_axis=(True,True,True), display_grid=(True,True,True)):
+  assert projection in ["perspective", "orthographic"]
+  coords, colors = prepare_pointclouds_and_colors(original_coords, original_colors, default_color)
+  if not type(coords) is list:
+    coords = [coords]
+    colors = [colors]
   if not valid_mask is None:
-    valid_mask = np.array(valid_mask, dtype='bool')
-    coords = coords[valid_mask]
-    np_colors = np_colors[valid_mask]
-
-  if max_points != -1 and coords.shape[0] > max_points:
-    selected_positions = random.sample(range(coords.shape[0]), max_points)
-    coords = coords[selected_positions]
-    np_colors = np_colors[selected_positions]
-    if not labels is None:
-      labels = [labels[k] for k in selected_positions]
+    if not type(valid_mask) is list:
+      valid_mask = [valid_mask]
+    assert len(valid_mask) == len(coords)
+    for i in range(len(coords)):
+      if valid_mask[i] is None:
+        continue
+      else:
+        actual_valid_mask = np.array(valid_mask[i], dtype='bool').flatten()
+        coords[i] = coords[i][actual_valid_mask]
+        colors[i] = colors[i][actual_valid_mask]
+  if not labels is None:
+    if not type(labels) is list:
+      labels = [labels]
+    assert len(labels) == len(coords)
+  for i in range(len(coords)):
+    if max_points != -1 and coords[i].shape[0] > max_points:
+      selected_positions = random.sample(range(coords[i].shape[0]), max_points)
+      coords[i] = coords[i][selected_positions]
+      colors[i] = colors[i][selected_positions]
+      if not labels is None:
+        labels[i] = [labels[i][k] for k in selected_positions]
+  # after this, we can compact everything into a single set of pointclouds. and do some more stuff for nicer visualization
+  coords = np.concatenate(coords)
+  colors = np.concatenate(colors)
+  if not labels is None:
+    labels = list_of_lists_into_single_list(labels)
   if win is None:
     win = title
-  if force_aspect_ratio:
-    #move this to use plotly
-
-    #add coords on a bounding box, to force
-    min_coords = coords.min(0)
-    max_coords = coords.max(0)
-
-    bbox_coords = generate_bbox_coords(min_coords, max_coords)
-    bbox_colors = np.array([(255,255,255)]*8)
-    bbox_coords = np.array(bbox_coords)
-    coords = np.concatenate((coords, bbox_coords), axis=0)
-    np_colors = np.concatenate((np_colors, bbox_colors), axis=0)
-    if not labels is None:
-      labels.extend(['' for _ in range(8)])
-  if nice_plot_rotation == 1:
-    plot_coords = np.matmul(xrotation_rad(np.deg2rad(90)), coords.transpose()).transpose()
-    plot_coords = np.matmul(yrotation_rad(np.deg2rad(180)), plot_coords.transpose()).transpose()
-    plot_coords = np.matmul(zrotation_rad(np.deg2rad(-45)), plot_coords.transpose()).transpose()
-  elif nice_plot_rotation == 2:
-    plot_coords = np.matmul(xrotation_rad(np.deg2rad(-90)), coords.transpose()).transpose()
-    plot_coords = np.matmul(yrotation_rad(np.deg2rad(180)), plot_coords.transpose()).transpose()
-    plot_coords = np.matmul(zrotation_rad(np.deg2rad(-45 + 180)), plot_coords.transpose()).transpose()
-  elif nice_plot_rotation == 3:
-    plot_coords = np.matmul(xrotation_rad(np.deg2rad(-90)), coords.transpose()).transpose()
-    plot_coords = np.matmul(yrotation_rad(np.deg2rad(180)), plot_coords.transpose()).transpose()
-    plot_coords = np.matmul(zrotation_rad(np.deg2rad(-45 )), plot_coords.transpose()).transpose()
-  elif nice_plot_rotation == 4:
-    plot_coords = np.matmul(xrotation_rad(np.deg2rad(-90)), coords.transpose()).transpose()
-    plot_coords = np.matmul(yrotation_rad(np.deg2rad(180)), plot_coords.transpose()).transpose()
-    plot_coords = np.matmul(zrotation_rad(np.deg2rad(180 )), plot_coords.transpose()).transpose()
-  else:
-    plot_coords = coords
-
+  plot_coords = coords
   from visdom import _markerColorCheck
   # we need to construct our own colors to override marker plotly options
-  # and allow custom hover (to show real coords)
-  colors = _markerColorCheck(np_colors, plot_coords, np.ones(len(plot_coords), dtype='uint8'), 1)
+  # and allow custom hover (to show real coords, and not the once used for visualization)
+  visdom_colors = _markerColorCheck(colors, plot_coords, np.ones(len(plot_coords), dtype='uint8'), 1)
+  # add the coordinates as hovertext
   hovertext = ['x:{:.2f}\ny:{:.2f}\nz:{:.2f}\n'.format(float(k[0]), float(k[1]), float(k[2])) for k in coords]
   if not labels is None:
     assert len(labels) == len(hovertext)
     hovertext = [hovertext[k] + ' {}'.format(labels[k]) for k in range(len(hovertext))]
 
+  # to see all the options interactively, click on edit plot on visdom->json->tree
+  # traceopts are used in line 1610 of visdom.__intit__.py
+  # data.update(trace_opts[trace_name])
+  # for layout options look at _opts2layout
+
+  camera = {'up':{
+              'x': str(up[0]),
+              'y': str(up[1]),
+              'z': str(up[2]),
+            },
+            'eye':{
+              'x': str(eye[0]),
+              'y': str(eye[1]),
+              'z': str(eye[2]),
+            },
+            'center':{
+              'x': str(center[0]),
+              'y': str(center[1]),
+              'z': str(center[2]),
+            },
+            'projection': {
+              'type': projection
+            }
+          }
+
   global_vis.scatter(plot_coords, env=env, win=win,
               opts={'webgl': True,
                     'title': title,
                     'name': 'scatter',
-                    'traceopts': {
+                    'layoutopts': {
                       'plotly':{
-                      '1': {
-                        #custom ops
-                        # https://plot.ly/python/reference/#scattergl-transforms
-                        'hoverlabel':{
-                          'bgcolor': '#000000'
-                        },
-                        'hoverinfo': 'text',
-                        'hovertext': hovertext,
-                        'marker': {
-                          'size': markersize,
-                          'symbol': 'dot',
-                          'color': colors[1],
-                          'line': {
-                              'color': '#000000',
-                              'width': 0,
+                        'scene': {
+                          'aspectmode': 'data',
+                          'camera': camera,
+                          'xaxis': {
+                            'tickfont':{
+                              'size': 14
+                            },
+                            'showgrid': display_grid[0],
+                            'showticklabels': display_grid[0],
+                            'zeroline': display_grid[0],
+                            'title': {
+                                  'text':'x' if display_grid[0] else '',
+                                  'font':{
+                                    'size':20
+                                    }
+                                  }
+                          },
+                          'yaxis': {
+                            'tickfont':{
+                              'size': 14
+                            },
+                            'showgrid': display_grid[1],
+                            'showticklabels': display_grid[1],
+                            'zeroline': display_grid[1],
+                            'title': {
+                                  'text':'y' if display_grid[1] else '',
+                                  'font':{
+                                    'size':20
+                                    }
+                                  }
+                          },
+                          'zaxis': {
+                            'tickfont':{
+                              'size': 14
+                            },
+                            'showgrid': display_grid[2],
+                            'showticklabels': display_grid[2],
+                            'zeroline': display_grid[2],
+                            'title': {
+                                  'text':'z' if display_grid[2] else '',
+                                  'font':{
+                                    'size':20
+                                    }
+                                  }
                           }
                         }
-                      }}}
-                    })
+                      }
+                    },
+                    'traceopts': {
+                      'plotly':{
+                        '1': {
+                          #custom ops
+                          # https://plot.ly/python/reference/#scattergl-transforms
+                          'hoverlabel':{
+                            'bgcolor': '#000000'
+                          },
+                          'hoverinfo': 'text',
+                          'hovertext': hovertext,
+                          'marker': {
+                            'size': markersize,
+                            'symbol': 'dot',
+                            'color': visdom_colors[1],
+                            'line': {
+                                'color': '#000000',
+                                'width': 0,
+                            }
+                          }
+                        },
+                      }
+                    }
+                  })
   '''
   verts = list()
   polygons = list()
@@ -850,9 +1371,9 @@ def show_pointcloud(coords, np_colors=None, title='none', win=None, env='PYCHARM
   viz.mesh(X=np.array(verts), Y=np.array(polygons), opts={'opacity':0.5, 'color': colors[:N]}, win='test')
   '''
 
-def list_dir(folder, prepend_folder):
+def listdir(folder, prepend_folder=False, extension=None):
   if prepend_folder:
-    return [folder + '/' + k for k in os.listdir(folder)]
+    return [folder + '/' + k for k in os.listdir(folder) if (True if extension is None else k.endswith(extension))]
   return os.listdir(folder)
 
 def print_float(number):
@@ -900,13 +1421,40 @@ def project_points_to_plane(data_points, p_n_0):
   return points_in_plane
 
 
-def fit_plane_np(data_points):
+def fit_plane_np(data_points, robust=False):
   assert data_points.shape[0] == 3
-  A = np.c_[data_points[0, :], data_points[1, :], np.ones(data_points.shape[1])]
-  C, _, _, _ = lstsq(A, data_points[2, :])
+  X = data_points.transpose()
+  y = -1*np.ones(data_points.shape[1])
+  if robust:
+    # The following is the as the least squares solution:
+    # linear = linear_model.LinearRegression(fit_intercept=False)
+    # linear.fit(X,y)
+    # C2 = linear.coef_
+
+    # but we use ransac, with the same estimator
+    from sklearn import linear_model
+
+    base_estimator = linear_model.LinearRegression(fit_intercept=False)
+    ransac = linear_model.RANSACRegressor(base_estimator=base_estimator, min_samples=50, )
+    ransac.fit(X, y)
+    C0 = base_estimator.fit(X, y).coef_
+    C = ransac.estimator_.coef_
+  else:
+    C, _, _, _ = lstsq(X, y)
   # The new z will be the z where the original directions intersect the plane C
-  p_n_0 = np.array((C[0], C[1], -1, C[2]))
+  p_n_0 = np.array((C[0], C[1], C[2], 1))
   return p_n_0
+
+def rotation_matrix_two_vectors(a, b):
+  # returns r st np.matmul(r, a) = b
+  v = np.cross(a,b)
+  c = np.dot(a,b)
+  s = np.linalg.norm(v)
+  I = np.identity(3)
+  vXStr = '{} {} {}; {} {} {}; {} {} {}'.format(0, -v[2], v[1], v[2], 0, -v[0], -v[1], v[0], 0)
+  k = np.matrix(vXStr)
+  r = I + k + np.matmul(k,k) * ((1 -c)/(s**2))
+  return np.array(r)
 
 def create_legend_classes(class_names, class_colors, class_ids, image=None):
   from matplotlib.patches import Rectangle
@@ -936,6 +1484,20 @@ def create_legend_classes(class_names, class_colors, class_ids, image=None):
   image = misc.imread(tmp_fig_file)
 
   return image
+
+def intrinsics_to_fov_x_deg(intrinsics):
+  # assumes zero centered
+  width = intrinsics[0,2] * 2
+  fov_x_rad = 2 * np.arctan(width / 2.0 / intrinsics[0, 0])
+  fov_x_deg = np.rad2deg(fov_x_rad)
+  return fov_x_deg
+
+def intrinsics_to_fov_y_deg(intrinsics):
+  # assumes zero centered
+  height = intrinsics[1,2] * 2
+  fov_y_rad = 2 * np.arctan(height / 2.0 / intrinsics[1, 1])
+  fov_y_deg = np.rad2deg(fov_y_rad)
+  return fov_y_deg
 
 def fov_x_to_intrinsic_deg(fov_x_deg, width, height, return_inverse=True):
   fov_y_rad = fov_x_deg / 180.0 * np.pi
@@ -1103,7 +1665,15 @@ def cv2_resize(image, target_shape, interpolation=cv2.INTER_NEAREST):
   else:
     return cv2.resize(image.transpose((1, 2, 0)), target_shape[::-1], interpolation=interpolation).transpose((2, 0, 1))
 
-def best_centercrop_image(image, height, width, return_rescaled_size=False):
+def get_image_x_y_coord_map(height, width):
+  # returns image coord maps from x_y, from 0 to width -1, 0 to
+  return
+
+def best_centercrop_image(image, height, width, return_rescaled_size=False, interpolation=cv2.INTER_NEAREST):
+  if height == -1 and width == -1:
+    if return_rescaled_size:
+      return image, image.shape
+    return image
   image_height, image_width = image.shape[-2:]
   im_crop_height_shape = (int(height), int(image_width * height / image_height))
   im_crop_width_shape = (int(image_height * width / image_width), int(width))
@@ -1113,18 +1683,39 @@ def best_centercrop_image(image, height, width, return_rescaled_size=False):
   else:
     # crop over width
     rescaled_size = im_crop_width_shape
-  resized_image = cv2_resize(image, rescaled_size)
+  resized_image = cv2_resize(image, rescaled_size, interpolation=interpolation)
   center_cropped = crop_center(resized_image, (height, width))
   if return_rescaled_size:
     return center_cropped, rescaled_size
   else:
     return center_cropped
 
+class ImageFolderCenterCroppLoader():
+  def __init__(self, folder_or_img_list, height, width, extension='jpg'):
+    if type(folder_or_img_list) == list:
+      self.img_list = folder_or_img_list
+    elif os.path.isdir(folder_or_img_list):
+      self.img_list = [folder_or_img_list + '/' + k for k in os.listdir(folder_or_img_list) if k.endswith(extension)]
+    self.img_list.sort()
+    self.height = height
+    self.width = width
+
+  def __len__(self):
+    return len(self.img_list)
+
+  def __getitem__(self, item):
+    image = cv2_imread(self.img_list[item])
+    img = best_centercrop_image(image, self.height, self.width)
+    to_return = {'image': np.array(img / 255.0, dtype='float32'),
+                 'path': self.img_list[item].split('/')[-1],
+                 'full_path': self.img_list[item]}
+    return to_return
+
 
 def undo_img_normalization(img, dataset='movies'):
   if img.shape[0] == 1:
     return img
-  from sintel_data.datagenerators.movie_sequence_dataset import MovieSequenceDataset
+  from movies_data.datagenerators.movie_sequence_dataset import MovieSequenceDataset
   std = MovieSequenceDataset.getstd()
   mean = MovieSequenceDataset.getmean()
   if not type(img) is np.ndarray:
@@ -1139,7 +1730,7 @@ def undo_img_normalization(img, dataset='movies'):
   return img
 
 def do_img_normalization(img, dataset='movies'):
-  from sintel_data.datagenerators.movie_sequence_dataset import MovieSequenceDataset
+  from movies_data.datagenerators.movie_sequence_dataset import MovieSequenceDataset
   if dataset != 'movies':
     raise Exception('Not implemented!')
   if img.shape[0] == 3:
@@ -1180,8 +1771,10 @@ def tonumpy(tensor):
     tensor = tensor.cpu()
   return tensor.detach().numpy()
 
-def totorch(numpy_array):
-  return torch.FloatTensor(numpy_array)
+def totorch(array):
+  if not type(array) is np.ndarray:
+    return array
+  return torch.FloatTensor(array)
 
 def tovariable(array):
   if type(array) == np.ndarray:
@@ -1195,7 +1788,7 @@ def pose_to_extrinsic(mat):
   return 1
 
 def subset_frames(get_dataset=False, fps=4):
-  from sintel_data.datagenerators.movie_sequence_dataset import MovieSequenceDataset
+  from movies_data.datagenerators.movie_sequence_dataset import MovieSequenceDataset
   selected_movies = ['pulp_fiction_1994']
   selected_frames =[]
   #refered as indexes at 4 fps
@@ -1235,6 +1828,13 @@ def get_essential_matrix(src_pts, tgt_pts, K):
 
   return E, R, t
 
+
+def to_cv2(image):
+  return image.transpose((1, 2, 0))
+
+def from_cv2(image):
+  return image.transpose((2, 0, 1))
+
 def filter_horizontal_sift_matches(L_pts, R_pts, sim_distance, env = None, L_img=None, R_img=None):
   vertical_distance = L_pts[0] - R_pts[0]
   gray_L_img = cv2.cvtColor(L_img, cv2.COLOR_BGR2GRAY)
@@ -1255,7 +1855,6 @@ def gaussian_blur_image(img, blur_pixels):
   else:
     assert img.shape[0] == 1 or img.shape[0] == 3
     return np.array([gaussian_filter(img[k, :, :], blur_pixels) for k in range(img.shape[0])], dtype='float32')
-
 
 def detect_lines(img, return_line_and_edges_image=False):
   # https://stackoverflow.com/questions/45322630/how-to-detect-lines-in-opencv
@@ -1352,6 +1951,7 @@ def compute_sift_image(L_img, R_img, mask_ref_and_target=None, make_plots=True, 
   if make_plots:
     draw_sift_matches(gray_L_img, gray_R_img, matches, ref_kp, tgt_kp, sim_distances, env)
   return L_pts, R_pts, matches, sim_distances
+
 
 def draw_sift_matches(L_img, R_img, matches, ref_kp, tgt_kp, sim_distances, env, show_biggest_dim=1000):
   less_than_100 = [d for d in sim_distances if d < 100]
@@ -1652,13 +2252,13 @@ def abs_plc_to_linear_plc(abs_plc):
   plc = abs_plc*mask
   return plc
 
-def linear_plc_to_log_plc(linear_plc, zero_log_bias):
+def linear_plc_to_log_plc(linear_plc, zero_log_bias=0.01):
   assert len(linear_plc.shape) == 4
   if not type(linear_plc) is torch.Tensor:
     raise Exception('Only implemented for tocrch tensor')
   return torch.log(torch.abs(linear_plc) + zero_log_bias)
 
-def log_plc_to_linear_plc(log_plc, zero_log_bias):
+def log_plc_to_linear_plc(log_plc, zero_log_bias=0.01):
   assert len(log_plc.shape) == 4
   if not type(log_plc) is torch.Tensor:
     raise Exception('Only implemented for torch tensor')
@@ -1716,6 +2316,7 @@ def save_checkpoint_pickles(save_path, others_to_pickle, is_best):
                       save_path / ('{}_best.pckl').format(prefix))
 
 def save_checkpoint(save_path, nets_to_save, is_best, other_objects_to_pickle=None):
+  save_path = Path(save_path)
   for (prefix, state) in nets_to_save.items():
     torch.save(state, save_path / ('{}_model_latest.pth.tar').format(prefix))
   if is_best:
@@ -1724,28 +2325,52 @@ def save_checkpoint(save_path, nets_to_save, is_best, other_objects_to_pickle=No
                       save_path / ('{}_model_best.pth.tar').format(prefix))
   if not other_objects_to_pickle is None:
     save_checkpoint_pickles(save_path, other_objects_to_pickle, is_best)
-  print('Saved in: ' + save_path)
+  print('Saved in: ' + str(save_path))
 
 def reject_outliers(data, m=2):
   return data[abs(data - np.mean(data)) < m * np.std(data)]
 
 
+def dilate(mask, dilation_percentage=0.01):
+  assert len(mask.shape) == 2
+  height, width = mask.shape
+  mask_dilated = cv2.dilate(np.array(mask, dtype='uint8'),
+                            np.ones((int(width * dilation_percentage), int(width * dilation_percentage))))
+  return mask_dilated
+
+
+def erode(mask, dilation_percentage=0.01):
+  assert len(mask.shape) == 2
+  height, width = mask.shape
+  mask_eroded = cv2.erode(np.array(mask, dtype='uint8'),
+                          np.ones((int(width * dilation_percentage), int(width * dilation_percentage))))
+  return mask_eroded
+
+
 if __name__ == '__main__':
-  test_image = 'imgs_to_test/img_9294.jpg'
-  img = scale_img_to_fit_canvas(cv2_imread(test_image), 720, 720)
+  stats = load_from_pickle('/data/vision/torralba/globalstructure/datasets/mannequin/colmap_reconstructions/pose_stats.pckl')
+  stats = np.array(list(stats.values()))
+  visdom_histogram(stats[:,0])
+  files = listdir('/data/vision/torralba/speechvision/gazegraph/megadepth/10_Things_I_Hate_About_You/', prepend_folder=True)
+  random.shuffle(files)
+  for f in files:
+    fs = listdir(f, True)
+    if len(fs) > 0:
+      res = np.load(fs[0])
+      imshow(res['image'], title='image')
+      show_pointcloud(res['canonical_coords'], res['image'], title='plc')
+  elems_to_plot = listdir('plcs_to_plot', True)
+  for elem in elems_to_plot:
+    elem = np.load(elem)
+    create_video_from_pointcloud(elem['coords_gt'], elem['images'])
+    create_video_from_pointcloud(elem['coords_predicted'], elem['images'])
 
-  detect_lines(img)
-
-  import time
-  then = time.time()
-  for k in range(100):
-    img = load_image_tile(panoramic_image, 0, 1024, 0, 2048)
-  print("full loading time: {}".format(time.time() - then))
-  then = time.time()
-  for k in range(100):
-    tile = load_image_tile(panoramic_image, 500, 600, 500, 600)
-  print("Loading tile time: {}".format(time.time() - then))
-  imshow(tile, biggest_dim=600, title='tile')
-  imshow(img, biggest_dim=600, title='img')
-  while True:
-    a = 1
+  all_items = read_text_file_lines('/data/vision/torralba/scratch2/mbaradad/mannequin/postprocess_reconstructions/max_width_1080/all_flows_to_compute_fwd')
+  for item in all_items:
+    im_1 = cv2_imread(item.split(' ')[0])
+    im_2 = cv2_imread(item.split(' ')[1])
+    flow = read_flow(item.split(' ')[2])
+    im_flow = flow_to_image(flow)
+    imshow(im_1, title='im1')
+    imshow(im_2, title='im2')
+    imshow(im_flow, title='flow')
