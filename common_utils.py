@@ -1236,9 +1236,14 @@ def show_pointcloud(original_coords, original_colors=None, title='none', win=Non
       colors[i] = colors[i][selected_positions]
       if not labels is None:
         labels[i] = [labels[i][k] for k in selected_positions]
+      if not type(markersize) is int or type(markersize) is float:
+        markersize[i] = [markersize[i][k] for k in selected_positions]
   # after this, we can compact everything into a single set of pointclouds. and do some more stuff for nicer visualization
   coords = np.concatenate(coords)
   colors = np.concatenate(colors)
+  if not type(markersize) is int or type(markersize) is float:
+    markersize = list_of_lists_into_single_list(markersize)
+    assert len(coords) == len(markersize)
   if not labels is None:
     labels = list_of_lists_into_single_list(labels)
   if win is None:
@@ -1344,6 +1349,7 @@ def show_pointcloud(original_coords, original_colors=None, title='none', win=Non
                           'hoverinfo': 'text',
                           'hovertext': hovertext,
                           'marker': {
+                            'sizeref': 1,
                             'size': markersize,
                             'symbol': 'dot',
                             'color': visdom_colors[1],
@@ -1356,20 +1362,8 @@ def show_pointcloud(original_coords, original_colors=None, title='none', win=Non
                       }
                     }
                   })
-  '''
-  verts = list()
-  polygons = list()
-  size = 0.2
-  N = 100
-  for k in range(len(coords[:N])):
-    actual_coords = coords[k]
-    verts.append(actual_coords - np.array((size, 0,0)))
-    verts.append(actual_coords - np.array((-size, 0,0)))
-    verts.append(actual_coords - np.array((0, size, 0)))
-    verts.append(actual_coords - np.array((0, -size, 0)))
-    polygons.append([k*3, k*3 + 1, k*3 + 2])
-  viz.mesh(X=np.array(verts), Y=np.array(polygons), opts={'opacity':0.5, 'color': colors[:N]}, win='test')
-  '''
+
+  return
 
 def listdir(folder, prepend_folder=False, extension=None):
   if prepend_folder:
@@ -1761,6 +1755,8 @@ def get_active_tensors(gpu_only=True):
   return all_tensors
 
 def tonumpy(tensor):
+  if type(tensor) is list:
+    return np.array(tensor)
   if type(tensor) is np.ndarray:
     return tensor
   if tensor.requires_grad:
