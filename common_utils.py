@@ -25,6 +25,7 @@ import matplotlib
 from my_python_utils.visdom_visualizations import *
 from my_python_utils.flow_utils.flowlib import *
 from my_python_utils.visdom_visualizations import visdom_default_window_title_and_vis
+from my_python_utils.logging_utils import *
 
 from scipy import misc
 import struct
