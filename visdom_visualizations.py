@@ -19,7 +19,7 @@ if not 'NO_VISDOM' in os.environ.keys():
   with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     import visdom
-    global_vis = visdom.Visdom(port=890, server='http://vision05', use_incoming_socket=True)
+    global_vis = visdom.Visdom(port=12890, server='http://visiongpu09', use_incoming_socket=True)
 
 def visdom_heatmap(heatmap, window=None, env=None, vis=None):
   trace = go.Heatmap(z=heatmap)
@@ -73,6 +73,7 @@ def visdom_dict(dict_to_plot, title=None, window=None, env='PYCHARN_RUN', vis=No
 def vidshow_file_vis(videofile, title=None, window=None, env=None, vis=None, fps=10):
   opts = dict()
   if not title is None:
+    opts['title'] = title
     opts['caption'] = title
     opts['fps'] = fps
   if vis is None:
@@ -143,18 +144,20 @@ def scale_image_biggest_dim(im, biggest_dim):
     im = myimresize(im, target_shape=target_imshape)
   return im
 
-def myimresize(img, target_shape):
+def myimresize(img, target_shape, interpolation_mode=cv2.INTER_NEAREST):
+  assert interpolation_mode in [cv2.INTER_NEAREST, cv2.INTER_AREA]
   max = img.max(); min = img.min()
-  if max > min:
+  uint_mode = img.dtype == 'uint8'
+  if max > min and not uint_mode:
     img = (img - min)/(max - min)
   if len(img.shape) == 3 and img.shape[0] in [1,3]:
     if img.shape[0] == 3:
       img = np.transpose(cv2.resize(np.transpose(img, (1,2,0)), target_shape[::-1]), (2,0,1))
     else:
-      img = cv2.resize(img[0], target_shape[::-1])[None,:,:]
+      img = cv2.resize(img[0], target_shape[::-1], interpolation=interpolation_mode)[None,:,:]
   else:
-    img = cv2.resize(img, target_shape[::-1])
-  if max > min:
+    img = cv2.resize(img, target_shape[::-1], interpolation=interpolation_mode)
+  if max > min and not uint_mode:
     return (img*(max - min) + min)
   else:
     return img

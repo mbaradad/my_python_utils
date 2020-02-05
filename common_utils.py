@@ -22,10 +22,7 @@ import warnings
 import random
 import argparse
 import matplotlib
-from my_python_utils.visdom_visualizations import *
-from my_python_utils.flow_utils.flowlib import *
-from my_python_utils.visdom_visualizations import visdom_default_window_title_and_vis
-from my_python_utils.logging_utils import *
+from tqdm import tqdm
 
 from scipy import misc
 import struct
@@ -49,6 +46,13 @@ from torch.autograd import Variable
 
 from scipy.linalg import lstsq
 import socket
+
+# other utils
+from my_python_utils.visdom_visualizations import *
+from my_python_utils.flow_utils.flowlib import *
+from my_python_utils.logging_utils import *
+from my_python_utils.geom_utils import *
+
 
 global VISDOM_BIGGEST_DIM
 VISDOM_BIGGEST_DIM = 600
@@ -426,14 +430,9 @@ def add_line(im, origin_x_y, end_x_y, color=(255, 0, 0)):
 
   return np.array(im).transpose()
 
-def add_arrow(im, origin_x_y, end_x_y, color=(255, 0, 0), width=5):
-  im_copy = np.array(im)
-  im_with_arrow = cv2.arrowedLine(im_copy.transpose((1,2,0)), tuple(np.array(origin_x_y, dtype='int')), tuple(np.array(end_x_y, dtype='int')), color, width).transpose((2,0,1))
-  return im_with_arrow
-
 
 def add_circle(im, centers_x_y, radius=5, color=(255, 0, 0)):
-  im_copy = np.array(im)
+  im_with_circle = np.array(im).transpose((1, 2, 0))
   if not type(centers_x_y) is list:
     centers_x_y = [centers_x_y]
   for i in range(len(centers_x_y)):
@@ -442,9 +441,37 @@ def add_circle(im, centers_x_y, radius=5, color=(255, 0, 0)):
       actual_color = tuple(color[i])
     else:
       actual_color = color
-    im_with_circle = cv2.circle(im_copy.transpose((1, 2, 0)), tuple(np.array(center_x_y, dtype='int')), radius, actual_color).transpose((2, 0, 1))
+    im_with_circle = cv2.circle(im_with_circle, tuple(np.array(center_x_y, dtype='int')), radius, actual_color, -1)
+  if type(im_with_circle) is np.ndarray:
+    return im_with_circle.transpose((2, 0, 1))
+  else:
+    return np.array(im_with_circle.get()).transpose((2, 0, 1))
 
-  return im_with_circle
+def add_arrow(im, origins_x_y, ends_x_y, colors=(255, 0, 0), width=5):
+  im_with_arrow = np.array(im).transpose((1, 2, 0))
+  if not type(origins_x_y) is list:
+    origins_x_y = [origins_x_y]
+  if not type(ends_x_y) is list:
+    ends_x_y = [ends_x_y]
+
+  assert len(origins_x_y) == len(ends_x_y)
+
+  for i in range(len(origins_x_y)):
+    origin_x_y = origins_x_y[i]
+    end_x_y = ends_x_y[i]
+    if type(colors) is list:
+      color = tuple(colors[i])
+    else:
+      color = colors
+    im_with_arrow = cv2.arrowedLine(im_with_arrow, tuple(np.array(origin_x_y, dtype='int')), tuple(np.array(end_x_y, dtype='int')), color, width)
+
+  if type(im_with_arrow) is np.ndarray:
+    return im_with_arrow.transpose((2, 0, 1))
+  else:
+    return np.array(im_with_arrow.get()).transpose((2, 0, 1))
+
+def tqdm_enumerate(what):
+  return enumerate(tqdm(what))
 
 def text_editor():
   txt = 'This is a write demo notepad. Type below. Delete clears text:<br>'
@@ -1707,32 +1734,6 @@ class ImageFolderCenterCroppLoader():
     return to_return
 
 
-def undo_img_normalization(img, dataset='movies'):
-  if img.shape[0] == 1:
-    return img
-  from movies_data.datagenerators.movie_sequence_dataset import MovieSequenceDataset
-  std = MovieSequenceDataset.getstd()
-  mean = MovieSequenceDataset.getmean()
-  if not type(img) is np.ndarray:
-    std = torch.FloatTensor(std)
-    mean = torch.FloatTensor(mean)
-  if dataset != 'movies':
-    raise Exception('Not implemented!')
-  if img.shape[0] == 3:
-    img = img*std[:,None,None] + mean[:,None,None]
-  else:
-    img = img * std + mean
-  return img
-
-def do_img_normalization(img, dataset='movies'):
-  from movies_data.datagenerators.movie_sequence_dataset import MovieSequenceDataset
-  if dataset != 'movies':
-    raise Exception('Not implemented!')
-  if img.shape[0] == 3:
-    return (img - np.reshape(MovieSequenceDataset.getmean(),(3,1,1))) / np.reshape(MovieSequenceDataset.getstd(),(3,1,1))
-  else:
-    return (img - MovieSequenceDataset.getmean()) / MovieSequenceDataset.getstd()
-
 def find_cuda_leaks(active_refs_before, active_refs_after):
   leaks = [k for k in active_refs_after if not id(k) in [id(r) for r in active_refs_before]]
   return leaks
@@ -2088,7 +2089,12 @@ def np_to_variable(np_obj):
 def find_closest_string(word, string_list):
   return difflib.get_close_matches(word, string_list)[0]
 
-def generate_palette(n, seed=-1):
+def generate_nice_palette(N_colors):
+  palette = sns.color_palette(None, N_colors)
+  return np.array(np.array(palette)*255.0, dtype='uint8')
+
+
+def generate_random_palette(n, seed=-1):
   import random
   if seed != -1:
     previous_state = random.getstate()
@@ -2109,6 +2115,7 @@ def generate_palette(n, seed=-1):
   if seed != -1:
     random.setstate(previous_state)
   return ret
+generate_random_colors = generate_random_palette
 
 def superpixels_image(image, num_segments=50):
   from skimage.segmentation import slic
@@ -2315,11 +2322,11 @@ def save_checkpoint_pickles(save_path, others_to_pickle, is_best):
 def save_checkpoint(save_path, nets_to_save, is_best, other_objects_to_pickle=None):
   save_path = Path(save_path)
   for (prefix, state) in nets_to_save.items():
-    torch.save(state, save_path / ('{}_model_latest.pth.tar').format(prefix))
+    torch.save(state, save_path / ('{}_latest.pth.tar').format(prefix))
   if is_best:
     for prefix in nets_to_save.keys():
-      shutil.copyfile(save_path / ('{}_model_latest.pth.tar').format(prefix),
-                      save_path / ('{}_model_best.pth.tar').format(prefix))
+      shutil.copyfile(save_path / ('{}_latest.pth.tar').format(prefix),
+                      save_path / ('{}_best.pth.tar').format(prefix))
   if not other_objects_to_pickle is None:
     save_checkpoint_pickles(save_path, other_objects_to_pickle, is_best)
   print('Saved in: ' + str(save_path))
@@ -2345,6 +2352,7 @@ def erode(mask, dilation_percentage=0.01):
 
 
 if __name__ == '__main__':
+  vidshow_file_vis('/tmp/5sugl6rw.mp4', title='asdf')
   stats = load_from_pickle('/data/vision/torralba/globalstructure/datasets/mannequin/colmap_reconstructions/pose_stats.pckl')
   stats = np.array(list(stats.values()))
   visdom_histogram(stats[:,0])
