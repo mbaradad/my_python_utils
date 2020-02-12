@@ -16,6 +16,7 @@ import cv2
 import glob
 import shutil
 import time
+import sys
 
 import seaborn as sns
 import warnings
@@ -51,7 +52,9 @@ import socket
 from my_python_utils.visdom_visualizations import *
 from my_python_utils.flow_utils.flowlib import *
 from my_python_utils.logging_utils import *
-from my_python_utils.geom_utils import *
+
+if int(torch.__version__.split('.')[0]) > 0:
+  from my_python_utils.geom_utils import *
 
 
 global VISDOM_BIGGEST_DIM
@@ -74,7 +77,8 @@ def select_gpus(gpus_arg):
 def gettimedatestring():
   return datetime.datetime.now().strftime("%m-%d-%H:%M")
 
-from multiprocess import Lock
+from multiprocessing import Lock
+
 global lock
 lock = Lock()
 def thread_safe_read_text_file_lines(filename):
@@ -1190,9 +1194,9 @@ def prepare_pointclouds_and_colors(coords, colors, default_color=(0,0,0)):
     return prepare_single_pointcloud_and_colors(coords, colors, default_color)
 
 def prepare_single_pointcloud_and_colors(coords, colors, default_color=(0,0,0)):
-  if colors is None:
-    colors = np.ones(coords.shape)*np.array((default_color))
   coords = tonumpy(coords)
+  if colors is None:
+    colors = np.array(default_color)[:, None].repeat(coords.size / 3, 1).reshape(coords.shape)
   colors = tonumpy(colors)
   if colors.dtype == 'float32':
     if colors.max() > 1.0:
@@ -2363,14 +2367,14 @@ if __name__ == '__main__':
     if len(fs) > 0:
       res = np.load(fs[0])
       imshow(res['image'], title='image')
-      show_pointcloud(res['canonical_coords'], res['image'], title='plc')
+      show_pointcloud(res['world_coords'], res['image'], title='plc')
   elems_to_plot = listdir('plcs_to_plot', True)
   for elem in elems_to_plot:
     elem = np.load(elem)
     create_video_from_pointcloud(elem['coords_gt'], elem['images'])
     create_video_from_pointcloud(elem['coords_predicted'], elem['images'])
 
-  all_items = read_text_file_lines('/data/vision/torralba/scratch2/mbaradad/mannequin/postprocess_reconstructions/max_width_1080/all_flows_to_compute_fwd')
+  all_items = read_text_file_lines('/data/vision/torralba/scratch/mbaradad/mannequin/postprocess_reconstructions/max_width_1080/all_flows_to_compute_fwd')
   for item in all_items:
     im_1 = cv2_imread(item.split(' ')[0])
     im_2 = cv2_imread(item.split(' ')[1])

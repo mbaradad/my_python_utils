@@ -1,19 +1,19 @@
-import plotly.plotly as py
-import plotly.graph_objs as go
-
-import visdom
-import plotly.plotly as py
 import plotly.graph_objs as go
 
 from skvideo.io import FFmpegWriter
 import tempfile
 
-import urllib
 import numpy as np
+import time
 
 import os
 import warnings
 import cv2
+
+from multiprocessing import Queue, Process
+import datetime
+
+import torch
 
 if not 'NO_VISDOM' in os.environ.keys():
   with warnings.catch_warnings():
@@ -161,6 +161,70 @@ def myimresize(img, target_shape, interpolation_mode=cv2.INTER_NEAREST):
     return (img*(max - min) + min)
   else:
     return img
+
+class ThreadedVisdomPlotter():
+  # plot func receives a dict and gets what it needs to plot
+  def __init__(self, plot_func, use_threading=True, queue_size=10):
+    self.queue = Queue(queue_size)
+    self.plot_func = plot_func
+    self.use_threading = use_threading
+    def plot_results_process(queue, plot_func):
+        # to avoid wasting time making videos
+        while True:
+            try:
+                if queue.empty():
+                    time.sleep(1)
+                    if queue.full():
+                        print("Plotting queue is full!")
+                else:
+                    actual_plot_dict = queue.get()
+                    env = actual_plot_dict['env']
+                    time_put_on_queue = actual_plot_dict.pop('time_put_on_queue')
+                    visdom_dict({"queue_put_time": time_put_on_queue}, title=time_put_on_queue, window='params', env=env)
+                    plot_func(**actual_plot_dict)
+            except Exception as e:
+                print('Plotting failed wiht exception: ')
+                print(e)
+    if self.use_threading:
+      Process(target=plot_results_process, args=[self.queue, self.plot_func]).start()
+
+  def _detach_tensor(self, tensor):
+    if tensor.is_cuda:
+      tensor = tensor.detach().cpu()
+    tensor = np.array(tensor.detach())
+    return tensor
+
+  def _detach_dict_or_list_torch(self, list_or_dict):
+    # We put things to cpu here to avoid er
+    if type(list_or_dict) is dict:
+      to_iter = list(list_or_dict.keys())
+    elif type(list_or_dict) is list:
+      to_iter = list(range(len(list_or_dict)))
+    else:
+      return list_or_dict
+    for k in to_iter:
+      if type(list_or_dict[k]) is torch.Tensor:
+        list_or_dict[k] = self._detach_tensor(list_or_dict[k])
+      else:
+        list_or_dict[k] = self._detach_dict_or_list_torch(list_or_dict[k])
+    return list_or_dict
+
+  def put_plot_dict(self, plot_dict):
+    try:
+      assert type(plot_dict) is dict
+      assert 'env' in plot_dict, 'Env to plot not found in plot_dict!'
+      plot_dict = self._detach_dict_or_list_torch(plot_dict)
+      if self.use_threading:
+        timestamp = datetime.datetime.now().strftime("%m-%d-%H:%M:%S")
+        plot_dict['time_put_on_queue'] = timestamp
+        self.queue.put(plot_dict)
+      else:
+        self.plot_func(**plot_dict)
+    except Exception as e:
+      print('Putting onto plot queue failed with exception:')
+      print(e)
+
+
 
 if __name__ == '__main__':
   heatmap = [[1, 20, 30],
