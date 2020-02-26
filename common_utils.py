@@ -403,6 +403,7 @@ def cross_product_mat_sub_x_np(v):
                    (-float(v[1]), float(v[0]), 0)])
 
 def str2bool(v):
+  assert type(v) is str
   if v.lower() in ('yes', 'true', 't', 'y', '1'):
     return True
   elif v.lower() in ('no', 'false', 'f', 'n', '0'):
