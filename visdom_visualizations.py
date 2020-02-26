@@ -14,6 +14,7 @@ from multiprocessing import Queue, Process
 import datetime
 
 import torch
+PYCHARM_VISDOM='PYCHARM_RUN_1'
 
 if not 'NO_VISDOM' in os.environ.keys():
   with warnings.catch_warnings():
@@ -50,7 +51,7 @@ def imshow_vis(im, title=None, win=None, env=None, vis=None):
     im = im/255.0
   vis.image(im, win=win, opts=opts, env=env)
 
-def visdom_dict(dict_to_plot, title=None, window=None, env='PYCHARN_RUN', vis=None, simplify_floats=True):
+def visdom_dict(dict_to_plot, title=None, window=None, env=PYCHARM_VISDOM, vis=None, simplify_floats=True):
   if vis is None:
     vis = global_vis
   opts = dict()
@@ -59,15 +60,15 @@ def visdom_dict(dict_to_plot, title=None, window=None, env='PYCHARN_RUN', vis=No
   vis.win_exists(title)
   if window is None:
     window = title
-  properties = []
   dict_to_plot_sorted_keys = [k for k in dict_to_plot.keys()]
   dict_to_plot_sorted_keys.sort()
+  html = '''<table style="width:100%">'''
   for k in dict_to_plot_sorted_keys:
-    if type(dict_to_plot[k]) is float and simplify_floats:
-      properties.append({'type': 'text', 'name': str(k), 'value': '{:.2f}'.format(dict_to_plot[k])})
-    else:
-      properties.append({'type': 'text', 'name': str(k), 'value': str(dict_to_plot[k])})
-  vis.properties(properties, win=window, opts=opts, env=env)
+    v = dict_to_plot[k]
+    html += '<tr> <th>{}</th> <th>{}</th> </tr>'.format(k, v)
+  html += '</table>'
+  vis.text(html, win=window, opts=opts, env=env)
+
 
 
 def vidshow_file_vis(videofile, title=None, window=None, env=None, vis=None, fps=10):
@@ -181,6 +182,7 @@ class ThreadedVisdomPlotter():
                     env = actual_plot_dict['env']
                     time_put_on_queue = actual_plot_dict.pop('time_put_on_queue')
                     visdom_dict({"queue_put_time": time_put_on_queue}, title=time_put_on_queue, window='params', env=env)
+                    print("Plotting...")
                     plot_func(**actual_plot_dict)
             except Exception as e:
                 print('Plotting failed wiht exception: ')

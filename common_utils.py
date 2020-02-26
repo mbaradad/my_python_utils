@@ -16,6 +16,7 @@ import cv2
 import glob
 import shutil
 import time
+import math
 import sys
 
 import seaborn as sns
@@ -53,9 +54,7 @@ from my_python_utils.visdom_visualizations import *
 from my_python_utils.flow_utils.flowlib import *
 from my_python_utils.logging_utils import *
 
-if int(torch.__version__.split('.')[0]) > 0:
-  from my_python_utils.geom_utils import *
-
+from my_python_utils.geom_utils import *
 
 global VISDOM_BIGGEST_DIM
 VISDOM_BIGGEST_DIM = 600
@@ -203,7 +202,7 @@ def merge_side_by_side(im1, im2):
   return im_canvas
 
 
-def visdom_histogram(array, win=None, title=None, env='PYCHARM_RUN', vis=None):
+def visdom_histogram(array, win=None, title=None, env=PYCHARM_VISDOM, vis=None):
   if type(array) is list:
     array = np.array(array)
   if vis is None:
@@ -217,7 +216,7 @@ def visdom_histogram(array, win=None, title=None, env='PYCHARM_RUN', vis=None):
   vis.histogram(array, env=env, win=win, opts=opt)
 
 
-def visdom_barplot(array, env='PYCHARM_RUN', win=None, title=None, vis=None):
+def visdom_barplot(array, env=PYCHARM_VISDOM, win=None, title=None, vis=None):
   if vis is None:
     vis = global_vis
 
@@ -227,7 +226,7 @@ def visdom_barplot(array, env='PYCHARM_RUN', win=None, title=None, vis=None):
   opt['title'] = str(win)
   vis.bar(array, env=env, win=win, opts=opt)
 
-def visdom_bar_plot(array, rownames=None, env='PYCHARM_RUN', win=None, title=None, vis=None):
+def visdom_bar_plot(array, rownames=None, env=PYCHARM_VISDOM, win=None, title=None, vis=None):
   if vis is None:
     vis = global_vis
 
@@ -240,7 +239,7 @@ def visdom_bar_plot(array, rownames=None, env='PYCHARM_RUN', win=None, title=Non
   vis.bar(array, env=env, win=win, opts=opt)
 
 
-def visdom_boxplot(array, env='PYCHARM_RUN', win='test', title=None, vis=None):
+def visdom_boxplot(array, env=PYCHARM_VISDOM, win='test', title=None, vis=None):
   if vis is None:
     vis = global_vis
 
@@ -249,7 +248,7 @@ def visdom_boxplot(array, env='PYCHARM_RUN', win='test', title=None, vis=None):
   opt = dict()
   vis.boxplot(array, env=env, win=win, opts=opt)
 
-def visdom_line(arrays, X=None, names=None, env='PYCHARM_RUN', win=None, title=None, vis=None):
+def visdom_line(arrays, X=None, names=None, env=PYCHARM_VISDOM, win=None, title=None, vis=None):
   if vis is None:
     vis = global_vis
 
@@ -541,7 +540,7 @@ def line_selector_x_y(img, window):
     time.sleep(0.02)
   return first, second
 
-def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, window=None, env='PYCHARM_RUN', fps=10, vis=None, add_ranges=False, return_image=False):
+def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, window=None, env=PYCHARM_VISDOM, fps=10, vis=None, add_ranges=False, return_image=False):
   if type(im) is list:
     for k in range(len(im)):
       im[k] = tonumpy(im[k])
@@ -637,6 +636,7 @@ def interlace(list_of_lists):
 
 def float2str(float, prec=2):
   return ("{0:." + str(prec) + "f}").format(float)
+
 
 def str2img(string_to_print, height=100, width=100):
   img = Image.new('RGB', (width, height))
@@ -1032,10 +1032,6 @@ def draw_horizon_line(image, rotation_mat=None, pitch_angle=None, roll_angle=Non
     pitch_rotations = xrotation_deg(float(pitch_angle))
     rotation_mat = pitch_rotations @ roll_rotations
   assert image.dtype == 'uint8'
-  original_image_shape = image.shape
-  desired_width = 1000
-  scale = desired_width / image.shape[1]
-  image = cv2_resize(image, (int(scale*image.shape[2]), int(scale*image.shape[1])))
   height, width = image.shape[1:]
   image = np.ascontiguousarray(tonumpy(image))
   if intrinsic is None:
@@ -1063,7 +1059,7 @@ def draw_horizon_line(image, rotation_mat=None, pitch_angle=None, roll_angle=Non
   finish_y = vanishing_z_image_plane[1] + (width - vanishing_z_image_plane[1])*vanishing_direction[1]/vanishing_direction[0]
   im = Image.fromarray(image.transpose((1,2,0)))
   draw = ImageDraw.Draw(im)
-  draw.line((0, start_y, im.size[0], finish_y), fill=color, width=10)
+  draw.line((0, start_y, im.size[0], finish_y), fill=color, width=int(math.ceil(height/100)))
   image_with_line = np.array(im).transpose((2,0,1))
   return image_with_line
 
@@ -1159,7 +1155,7 @@ def rotate_pointcloud(pcl, rotation_mat):
   flattened_pcl = pcl.reshape((3,-1))
   return np.matmul(rotation_mat, flattened_pcl).reshape(original_pcl_shape)
 
-def show_pointcloud_errors(coords, errors, title='none', win=None, env='PYCHARM_RUN', markersize=3, max_points=10000,
+def show_pointcloud_errors(coords, errors, title='none', win=None, env=PYCHARM_VISDOM, markersize=3, max_points=10000,
                     force_aspect_ratio=True, valid_mask=None):
   if type(coords) is list:
     assert type(errors) is list and type(title) is list
@@ -1238,9 +1234,10 @@ def get_plane_pointcloud(plane_params, x_extension=None, y_extension=None, z_ext
   return points, colors
 
 
-def show_pointcloud(original_coords, original_colors=None, title='none', win=None, env='PYCHARM_RUN',
+def show_pointcloud(original_coords, original_colors=None, title='none', win=None, env=PYCHARM_VISDOM,
                     markersize=3, max_points=10000, valid_mask=None, labels=None, default_color=(0,0,0),
-                    projection="orthographic", center=(0,0,0), up=(0,-1,0), eye=(0,0,-2), display_axis=(True,True,True), display_grid=(True,True,True)):
+                    projection="orthographic", center=(0,0,0), up=(0,-1,0), eye=(0,0,-2),
+                    display_grid=(True,True,True), axis_ranges=None):
   assert projection in ["perspective", "orthographic"]
   coords, colors = prepare_pointclouds_and_colors(original_coords, original_colors, default_color)
   if not type(coords) is list:
@@ -1329,6 +1326,8 @@ def show_pointcloud(original_coords, original_colors=None, title='none', win=Non
                             'tickfont':{
                               'size': 14
                             },
+                            'autorange': axis_ranges is None,
+                            'range': [str(axis_ranges['min_x']), str(axis_ranges['max_x'])] if not axis_ranges is None else [-1,-1],
                             'showgrid': display_grid[0],
                             'showticklabels': display_grid[0],
                             'zeroline': display_grid[0],
@@ -1343,6 +1342,8 @@ def show_pointcloud(original_coords, original_colors=None, title='none', win=Non
                             'tickfont':{
                               'size': 14
                             },
+                            'autorange': axis_ranges is None,
+                            'range': [str(axis_ranges['min_y']), str(axis_ranges['max_y'])] if not axis_ranges is None else [-1, -1],
                             'showgrid': display_grid[1],
                             'showticklabels': display_grid[1],
                             'zeroline': display_grid[1],
@@ -1357,6 +1358,8 @@ def show_pointcloud(original_coords, original_colors=None, title='none', win=Non
                             'tickfont':{
                               'size': 14
                             },
+                            'autorange': axis_ranges is None,
+                            'range': [str(axis_ranges['min_z']), str(axis_ranges['max_z'])] if not axis_ranges is None else [-1, -1],
                             'showgrid': display_grid[2],
                             'showticklabels': display_grid[2],
                             'zeroline': display_grid[2],
@@ -1398,9 +1401,10 @@ def show_pointcloud(original_coords, original_colors=None, title='none', win=Non
   return
 
 def listdir(folder, prepend_folder=False, extension=None):
+  files = [k for k in os.listdir(folder) if (True if extension is None else k.endswith(extension))]
   if prepend_folder:
-    return [folder + '/' + k for k in os.listdir(folder) if (True if extension is None else k.endswith(extension))]
-  return os.listdir(folder)
+    files = [folder + '/' + f for f in files]
+  return files
 
 def print_float(number):
   return "{:.2f}".format(number)
@@ -1470,17 +1474,6 @@ def fit_plane_np(data_points, robust=False):
   # The new z will be the z where the original directions intersect the plane C
   p_n_0 = np.array((C[0], C[1], C[2], 1))
   return p_n_0
-
-def rotation_matrix_two_vectors(a, b):
-  # returns r st np.matmul(r, a) = b
-  v = np.cross(a,b)
-  c = np.dot(a,b)
-  s = np.linalg.norm(v)
-  I = np.identity(3)
-  vXStr = '{} {} {}; {} {} {}; {} {} {}'.format(0, -v[2], v[1], v[2], 0, -v[0], -v[1], v[0], 0)
-  k = np.matrix(vXStr)
-  r = I + k + np.matmul(k,k) * ((1 -c)/(s**2))
-  return np.array(r)
 
 def create_legend_classes(class_names, class_colors, class_ids, image=None):
   from matplotlib.patches import Rectangle
@@ -2346,6 +2339,13 @@ def dilate(mask, dilation_percentage=0.01):
                             np.ones((int(width * dilation_percentage), int(width * dilation_percentage))))
   return mask_dilated
 
+def set_optimizer_lr(optimizer, new_lr):
+  for group in optimizer.param_groups:
+    group['lr'] = new_lr
+  return optimizer
+
+def get_optimizer_lr(optimizer):
+  return optimizer.state_dict()['param_groups'][0]['lr']
 
 def erode(mask, dilation_percentage=0.01):
   assert len(mask.shape) == 2
@@ -2354,6 +2354,31 @@ def erode(mask, dilation_percentage=0.01):
                           np.ones((int(width * dilation_percentage), int(width * dilation_percentage))))
   return mask_eroded
 
+
+class FixSampleDataset:
+  def __init__(self, dataset, samples_to_fix = -1, replication_factor=-1):
+    self.dataset = dataset
+    self.replication_factor = replication_factor
+    if samples_to_fix == -1:
+      # just get a random one
+      self.fixed_samples = [self.dataset.__getitem__(np.randint(0, len(self.dataset)))]
+    else:
+      if not type(samples_to_fix) is list:
+        samples_to_fix = list(samples_to_fix)
+      self.fixed_samples = [self.dataset.__getitem__(k) for k in samples_to_fix]
+
+  def __len__(self):
+    if self.replication_factor == -1:
+      return len(self.dataset)
+    else:
+      return len(self.fixed_samples) * self.replication_factor
+
+  def __getattr__(self, item):
+    return getattr(self.dataset, item)
+
+  def __getitem__(self, item):
+    item = np.random.randint(0, len(self.fixed_samples))
+    return self.fixed_samples[item]
 
 if __name__ == '__main__':
   vidshow_file_vis('/tmp/5sugl6rw.mp4', title='asdf')

@@ -113,8 +113,9 @@ def compute_plane_intersections_from_camera(extrinsics, K, P, mask):
   assert len(P.shape) == 4 and P.shape[0] == 4
   extrinsics
 
-from kornia import pixel2cam as k_pixel2cam
-from kornia import create_meshgrid, convert_points_to_homogeneous
+if int(torch.__version__.split('.')[0]) > 0:
+  from kornia import pixel2cam as k_pixel2cam
+  from kornia import create_meshgrid, convert_points_to_homogeneous
 
 pixel_coords_cpu = None
 pixel_coords_cuda = None
@@ -204,3 +205,51 @@ def construct_plucker_matrices(points_a, points_b):
   matrices = points_a[:,None,:] * points_b[:,:,None] - points_a[:,:,None] * points_b[:,None,:]
 
   return matrices
+
+def euler2mat_torch(angle):
+  """Convert euler angles to rotation matrix.
+   Reference: https://github.com/pulkitag/pycaffe-utils/blob/master/rot_utils.py#L174
+  Args:
+      angle: rotation angle along 3 axis (in radians) -- size = [B, 3]
+  Returns:
+      Rotation matrix corresponding to the euler angles -- size = [B, 3, 3]
+  """
+  B = angle.size(0)
+  x, y, z = angle[:, 0], angle[:, 1], angle[:, 2]
+
+  cosz = torch.cos(z)
+  sinz = torch.sin(z)
+
+  zeros = z.detach() * 0
+  ones = zeros.detach() + 1
+  zmat = torch.stack([cosz, -sinz, zeros,
+                      sinz, cosz, zeros,
+                      zeros, zeros, ones], dim=1).reshape(B, 3, 3)
+
+  cosy = torch.cos(y)
+  siny = torch.sin(y)
+
+  ymat = torch.stack([cosy, zeros, siny,
+                      zeros, ones, zeros,
+                      -siny, zeros, cosy], dim=1).reshape(B, 3, 3)
+
+  cosx = torch.cos(x)
+  sinx = torch.sin(x)
+
+  xmat = torch.stack([ones, zeros, zeros,
+                      zeros, cosx, -sinx,
+                      zeros, sinx, cosx], dim=1).reshape(B, 3, 3)
+
+  rotMat = xmat @ ymat @ zmat
+  return rotMat
+
+def rotation_matrix_two_vectors(a, b):
+  # returns r st np.matmul(r, a) = b
+  v = np.cross(a,b)
+  c = np.dot(a,b)
+  s = np.linalg.norm(v)
+  I = np.identity(3)
+  vXStr = '{} {} {}; {} {} {}; {} {} {}'.format(0, -v[2], v[1], v[2], 0, -v[0], -v[1], v[0], 0)
+  k = np.matrix(vXStr)
+  r = I + k + np.matmul(k,k) * ((1 -c)/(s**2))
+  return np.array(r)
