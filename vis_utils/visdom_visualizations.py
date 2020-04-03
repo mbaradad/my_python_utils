@@ -2,16 +2,19 @@ import plotly.graph_objs as go
 
 import skvideo
 skvideo.setFFmpegPath('/usr/bin/')
-from skvideo.io import FFmpegWriter
+from skvideo.io import FFmpegWriter, FFmpegReader
 
 import tempfile
 
 import numpy as np
 import time
+import imageio
 
 import os
 import warnings
 import cv2
+
+import math
 
 from multiprocessing import Queue, Process
 import datetime
@@ -108,7 +111,39 @@ class MyVideoWriter():
   def close(self):
     self.video_writer.close()
 
-# encoded as apple ProRes mov
+class MyVideoReader():
+  def __init__(self, video_file):
+    self.vid = imageio.get_reader(video_file)
+    self.frame_i = 0
+
+  def get_next_frame(self):
+    try:
+      return np.array(self.vid.get_next_data().transpose((2,0,1)))
+    except:
+      return None
+
+  def get_n_frames(self):
+    return int(math.floor(self.get_duration_seconds() * self.get_fps()))
+
+  def get_duration_seconds(self):
+    return self.vid._meta['duration']
+
+  def get_fps(self):
+    return self.vid._meta['fps']
+
+  def position_cursor_frame(self, i):
+    assert i < self.get_n_frames()
+    self.frame_i = i
+    self.vid.set_image_index(self.frame_i)
+
+  def get_frame_i(self, i):
+    old_frame_i = self.frame_i
+    self.position_cursor_frame(i)
+    frame = self.get_next_frame()
+    self.position_cursor_frame(old_frame_i)
+    return frame
+
+  # encoded as apple ProRes mov
 # ffmpeg -i input.avi -c:v prores_ks -profile:v 3 -c:a pcm_s16le output.mov
 # https://video.stackexchange.com/questions/14712/how-to-encode-apple-prores-on-windows-or-linux
 def get_video_writer(videofile, fps=10, verbosity=0):
@@ -118,6 +153,8 @@ def get_video_writer(videofile, fps=10, verbosity=0):
                                                                     '-profile:v': '3',
                                                                     '-c:a': 'pcm_s16le'})
   return writer
+
+
 
 def vidshow_vis(frames, title=None, window=None, env=None, vis=None, biggest_dim=None, fps=10):
   # if it does not work, change the ffmpeg. It was failing using anaconda ffmpeg default video settings,
