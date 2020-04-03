@@ -50,9 +50,11 @@ from scipy.linalg import lstsq
 import socket
 
 # other utils
-from my_python_utils.visdom_visualizations import *
+from my_python_utils.vis_utils.visdom_visualizations import *
 from my_python_utils.flow_utils.flowlib import *
 from my_python_utils.logging_utils import *
+
+from sklearn.manifold import TSNE
 
 from my_python_utils.geom_utils import *
 
@@ -157,11 +159,20 @@ def chunk_list(seq, num):
 
   return out
 
+def tsne(X, components=2):
+  assert len(X.shape) == 2, "N batch X M dimensions"
+  tsne = TSNE(n_components=components)
+  X_embedded = tsne.fit_transform(X)
+  return X_embedded
+
 def png_16_bits_imread(file):
   return cv2.imread(file, -cv2.IMREAD_ANYDEPTH)
 
 def cv2_imread(file, return_BGR=False):
-  im = cv2.imread(file).transpose(2,0,1)
+  im = cv2.imread(file)
+  if im is None:
+    raise Exception('Image {} could not be read!'.format(file))
+  im = im.transpose(2,0,1)
   if return_BGR:
     return im
   return im[::-1, :, :]
@@ -202,7 +213,9 @@ def merge_side_by_side(im1, im2):
   return im_canvas
 
 
-def visdom_histogram(array, win=None, title=None, env=PYCHARM_VISDOM, vis=None):
+def visdom_histogram(array, win=None, title=None, env=None, vis=None):
+  if env is None:
+    env = PYCHARM_VISDOM
   if type(array) is list:
     array = np.array(array)
   if vis is None:
@@ -216,7 +229,9 @@ def visdom_histogram(array, win=None, title=None, env=PYCHARM_VISDOM, vis=None):
   vis.histogram(array, env=env, win=win, opts=opt)
 
 
-def visdom_barplot(array, env=PYCHARM_VISDOM, win=None, title=None, vis=None):
+def visdom_barplot(array, env=None, win=None, title=None, vis=None):
+  if env is None:
+    env = PYCHARM_VISDOM
   if vis is None:
     vis = global_vis
 
@@ -226,7 +241,9 @@ def visdom_barplot(array, env=PYCHARM_VISDOM, win=None, title=None, vis=None):
   opt['title'] = str(win)
   vis.bar(array, env=env, win=win, opts=opt)
 
-def visdom_bar_plot(array, rownames=None, env=PYCHARM_VISDOM, win=None, title=None, vis=None):
+def visdom_bar_plot(array, rownames=None, env=None, win=None, title=None, vis=None):
+  if env is None:
+    env = PYCHARM_VISDOM
   if vis is None:
     vis = global_vis
 
@@ -239,7 +256,9 @@ def visdom_bar_plot(array, rownames=None, env=PYCHARM_VISDOM, win=None, title=No
   vis.bar(array, env=env, win=win, opts=opt)
 
 
-def visdom_boxplot(array, env=PYCHARM_VISDOM, win='test', title=None, vis=None):
+def visdom_boxplot(array, env=None, win='test', title=None, vis=None):
+  if env is None:
+    env = PYCHARM_VISDOM
   if vis is None:
     vis = global_vis
 
@@ -248,7 +267,9 @@ def visdom_boxplot(array, env=PYCHARM_VISDOM, win='test', title=None, vis=None):
   opt = dict()
   vis.boxplot(array, env=env, win=win, opts=opt)
 
-def visdom_line(arrays, X=None, names=None, env=PYCHARM_VISDOM, win=None, title=None, vis=None):
+def visdom_line(arrays, X=None, names=None, env=None, win=None, title=None, vis=None):
+  if env is None:
+    env = PYCHARM_VISDOM
   if vis is None:
     vis = global_vis
 
@@ -435,6 +456,23 @@ def add_line(im, origin_x_y, end_x_y, color=(255, 0, 0)):
   return np.array(im).transpose()
 
 
+def add_squared_bbox(im, centers_x_y, box_width=5, color=(255, 0, 0), line_width=1):
+  im_with_box = np.array(im).transpose((1, 2, 0))
+  if not type(centers_x_y) is list:
+    centers_x_y = [centers_x_y]
+  for i in range(len(centers_x_y)):
+    center_x_y = centers_x_y[i]
+    if type(color) is list:
+      actual_color = tuple(color[i])
+    else:
+      actual_color = color
+    im_with_box = cv2.rectangle(im_with_box, tuple(np.array(center_x_y, dtype='int') - box_width // 2), tuple(np.array(center_x_y, dtype='int') + box_width // 2), actual_color, line_width)
+  if type(im_with_box) is np.ndarray:
+    return im_with_box.transpose((2, 0, 1))
+  else:
+    return np.array(im_with_box.get()).transpose((2, 0, 1))
+
+
 def add_circle(im, centers_x_y, radius=5, color=(255, 0, 0)):
   im_with_circle = np.array(im).transpose((1, 2, 0))
   if not type(centers_x_y) is list:
@@ -541,14 +579,30 @@ def line_selector_x_y(img, window):
     time.sleep(0.02)
   return first, second
 
-def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True, max_batch_display=10, window=None, env=PYCHARM_VISDOM, fps=10, vis=None, add_ranges=False, return_image=False):
+def add_axis_to_image(im):
+  fig = plt.figure()
+  ax = fig.add_subplot(111)
+  if len(im.shape) == 3 and im.shape[0] == 1:
+    ax.imshow(im[0])
+  else:
+    ax.imshow(im)
+  fig.canvas.draw()
+  # Now we can save it to a numpy array.
+  data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+  data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+  data = data.transpose((2,0,1))
+  return data
+
+
+def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True,
+           max_batch_display=10, window=None, env=None, fps=10, vis=None,
+           add_ranges=False, return_image=False, add_axis=False):
+  if env is None:
+    env = PYCHARM_VISDOM
   if type(im) is list:
     for k in range(len(im)):
       im[k] = tonumpy(im[k])
     im = np.array(im)
-  if 'VISDOM_BIGGEST_DIM' in globals() and biggest_dim is None:
-    global VISDOM_BIGGEST_DIM
-    biggest_dim = VISDOM_BIGGEST_DIM
   if window is None:
     window = title
   if type(im) == 'string':
@@ -570,6 +624,7 @@ def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True, 
   if len(im.shape) == 3 and im.shape[-1] in [1,3]:
     #put automatically channel first if its last
     im = im.transpose((2,0,1))
+
   if len(im.shape) == 2:
     #expand first if 1 channel image
     im = im[None,:,:]
@@ -577,11 +632,19 @@ def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True, 
     im = scale_image_biggest_dim(im, biggest_dim)
   if normalize_image and im.max() != im.min():
     im = (im - im.min())/(im.max() - im.min())
+
+  if add_axis:
+    if len(im.shape) == 3:
+      im = add_axis_to_image(im)
+    else:
+      for k in range(len(im)):
+        im[k] = add_axis_to_image(im[k])
+
   if path is None:
     if window is None:
       window = title
     if len(im.shape) == 4:
-      vidshow_vis(im, title=title, window=window, env=env, vis=vis, biggest_dim=biggest_dim, fps=fps)
+      return vidshow_vis(im, title=title, window=window, env=env, vis=vis, biggest_dim=biggest_dim, fps=fps)
     else:
       imshow_vis(im, title=title + postfix, win=window, env=env, vis=vis)
   else:
@@ -645,21 +708,12 @@ def str2img(string_to_print, height=100, width=100):
   d.text((20, 20), string_to_print, fill=(255, 255, 255))
   return np.array(img).transpose((2,0,1))
 
-def count_trainable_parameters(network):
+def count_trainable_parameters(network, return_as_string):
   n_parameters = sum(p.numel() for p in network.parameters() if p.requires_grad)
-  return n_parameters
-
-def look_at_to_extrinsics_mat(camera_pos, look_at, up_vector, right_vector):
-  # https://learnopengl.com/Getting-started/Camera
-  assert len(right_vector.shape) == 1 and camera_pos.shape[0] == look_at.shape[0] == up_vector.shape[0] == right_vector.shape[0] == 3
-  a1 = np.eye((4, 4))
-  a2 = np.eye((4, 4))
-  a1[0, :3] = right_vector
-  a1[1, :3] = up_vector
-  a1[2, :3] = up_vector
-  a2[:3, 3] = -1 * camera_pos
-  look_at = np.matmul(a1, a2)
-  return look_at
+  if return_as_string:
+    return f"{n_parameters:,}"
+  else:
+    return n_parameters
 
 def create_plane_pointcloud_coords(center, normal, extent, samples, color=(0,0,0)):
   if normal[0] == 0 and normal[1] == 0:
@@ -1156,8 +1210,10 @@ def rotate_pointcloud(pcl, rotation_mat):
   flattened_pcl = pcl.reshape((3,-1))
   return np.matmul(rotation_mat, flattened_pcl).reshape(original_pcl_shape)
 
-def show_pointcloud_errors(coords, errors, title='none', win=None, env=PYCHARM_VISDOM, markersize=3, max_points=10000,
+def show_pointcloud_errors(coords, errors, title='none', win=None, env=None, markersize=3, max_points=10000,
                     force_aspect_ratio=True, valid_mask=None):
+  if env is None:
+    env = PYCHARM_VISDOM
   if type(coords) is list:
     assert type(errors) is list and type(title) is list
     assert len(coords) == len(errors) and len(coords) == len(title)
@@ -1235,10 +1291,12 @@ def get_plane_pointcloud(plane_params, x_extension=None, y_extension=None, z_ext
   return points, colors
 
 
-def show_pointcloud(original_coords, original_colors=None, title='none', win=None, env=PYCHARM_VISDOM,
+def show_pointcloud(original_coords, original_colors=None, title='none', win=None, env=None,
                     markersize=3, max_points=10000, valid_mask=None, labels=None, default_color=(0,0,0),
                     projection="orthographic", center=(0,0,0), up=(0,-1,0), eye=(0,0,-2),
                     display_grid=(True,True,True), axis_ranges=None):
+  if env is None:
+    env = PYCHARM_VISDOM
   assert projection in ["perspective", "orthographic"]
   coords, colors = prepare_pointclouds_and_colors(original_coords, original_colors, default_color)
   if not type(coords) is list:
@@ -1564,6 +1622,11 @@ def dump_pointcloud(coords, colors, file_name, valid_mask=None, max_points=10000
       selected_positions = random.sample(range(coords.shape[0]), max_points)
     coords = coords[selected_positions]
     colors = colors[selected_positions]
+  coords = tonumpy(coords)
+  colors = tonumpy(colors)
+  if coords.shape[0] == 3:
+    coords = coords.transpose()
+    colors = colors.transpose()
   data_np = np.concatenate((coords, colors), axis=1)
   tupled_data = [tuple(k) for k in data_np.tolist()]
   data = np.array(tupled_data, dtype=[('x', 'f4'),
@@ -1622,6 +1685,11 @@ def save_np_array(array, filename):
   with open(filename, 'wb') as outfile:
     pickle.dump(array, outfile, pickle.HIGHEST_PROTOCOL)
 
+def define_and_make_dir(dir):
+  os.makedirs(dir, exist_ok=True)
+  return dir
+
+
 def mkdir(dir):
   if not os.path.exists(dir):
     os.mkdir(dir)
@@ -1679,11 +1747,11 @@ def crop_center(img, crop):
   else:
     return img[starty:starty + cropy, startx:startx + cropx]
 
-def cv2_resize(image, target_shape, interpolation=cv2.INTER_NEAREST):
+def cv2_resize(image, target_height_width, interpolation=cv2.INTER_NEAREST):
   if len(image.shape) == 2:
-    return cv2.resize(image, target_shape[::-1], interpolation=interpolation)
+    return cv2.resize(image, target_height_width[::-1], interpolation=interpolation)
   else:
-    return cv2.resize(image.transpose((1, 2, 0)), target_shape[::-1], interpolation=interpolation).transpose((2, 0, 1))
+    return cv2.resize(image.transpose((1, 2, 0)), target_height_width[::-1], interpolation=interpolation).transpose((2, 0, 1))
 
 def get_image_x_y_coord_map(height, width):
   # returns image coord maps from x_y, from 0 to width -1, 0 to
@@ -1754,6 +1822,19 @@ def get_active_tensors(gpu_only=True):
       pass
   return all_tensors
 
+def send_graph_to_device(g, device):
+  # nodes
+  labels = g.node_attr_schemes()
+  for l in labels.keys():
+    g.ndata[l] = g.ndata.pop(l).to(device, non_blocking=True)
+
+  # edges
+  labels = g.edge_attr_schemes()
+  for l in labels.keys():
+    g.edata[l] = g.edata.pop(l).to(device, non_blocking=True)
+
+  return g
+
 def tonumpy(tensor):
   if type(tensor) is list:
     return np.array(tensor)
@@ -1768,8 +1849,10 @@ def tonumpy(tensor):
   return tensor.detach().numpy()
 
 def totorch(array):
-  if not type(array) is np.ndarray:
+  if type(array) is torch.Tensor:
     return array
+  if not type(array) is np.ndarray:
+    array = np.array(array)
   return torch.FloatTensor(array)
 
 def tovariable(array):
@@ -2084,9 +2167,14 @@ def np_to_tensor(np_obj):
 def np_to_variable(np_obj):
   return Variable(np_to_tensor(np_obj))
 
-def find_closest_string(word, string_list):
-  return difflib.get_close_matches(word, string_list)[0]
+def string_similarity(word0, word1):
+  return difflib.SequenceMatcher(None, word0, word1).ratio()
 
+def find_closest_string(word, string_list):
+  try:
+    return difflib.get_close_matches(word, string_list)[0]
+  except:
+    return ''
 def generate_nice_palette(N_colors):
   palette = sns.color_palette(None, N_colors)
   return np.array(np.array(palette)*255.0, dtype='uint8')
@@ -2318,6 +2406,7 @@ def save_checkpoint_pickles(save_path, others_to_pickle, is_best):
                       save_path / ('{}_best.pckl').format(prefix))
 
 def save_checkpoint(save_path, nets_to_save, is_best, other_objects_to_pickle=None):
+  print('Saving checkpoint in: ' + str(save_path))
   save_path = Path(save_path)
   for (prefix, state) in nets_to_save.items():
     torch.save(state, save_path / ('{}_latest.pth.tar').format(prefix))
@@ -2355,6 +2444,29 @@ def erode(mask, dilation_percentage=0.01):
                           np.ones((int(width * dilation_percentage), int(width * dilation_percentage))))
   return mask_eroded
 
+def bb_intersection_over_union(boxA, boxB):
+  # determine the (x, y)-coordinates of the intersection rectangle
+  xA = max(boxA[0], boxB[0])
+  yA = max(boxA[1], boxB[1])
+  xB = min(boxA[2], boxB[2])
+  yB = min(boxA[3], boxB[3])
+
+  # compute the area of intersection rectangle
+  interArea = abs(max((xB - xA, 0)) * max((yB - yA), 0))
+  if interArea == 0:
+    return 0
+  # compute the area of both the prediction and ground-truth
+  # rectangles
+  boxAArea = abs((boxA[2] - boxA[0]) * (boxA[3] - boxA[1]))
+  boxBArea = abs((boxB[2] - boxB[0]) * (boxB[3] - boxB[1]))
+
+  # compute the intersection over union by taking the intersection
+  # area and dividing it by the sum of prediction + ground-truth
+  # areas - the interesection area
+  iou = interArea / float(boxAArea + boxBArea - interArea)
+
+  # return the intersection over union value
+  return iou
 
 class FixSampleDataset:
   def __init__(self, dataset, samples_to_fix = -1, replication_factor=-1):
@@ -2374,6 +2486,9 @@ class FixSampleDataset:
     else:
       return len(self.fixed_samples) * self.replication_factor
 
+  def set_replication_factor(self, replication_factor):
+    self.replication_factor = replication_factor
+
   def __getattr__(self, item):
     return getattr(self.dataset, item)
 
@@ -2382,7 +2497,15 @@ class FixSampleDataset:
     return self.fixed_samples[item]
 
 if __name__ == '__main__':
-  vidshow_file_vis('/tmp/5sugl6rw.mp4', title='asdf')
+  #keys = list(os.environ.keys())
+  #keys.sort()
+  #for k in keys:
+  #  print(k + ': ' + os.environ[k])
+
+  vid = np.zeros((10,3,100,100))
+  filename = imshow(vid, title='test_1', env='test_video')
+  vidshow_file_vis(filename, title='asdf', env='test_video')
+  exit(0)
   stats = load_from_pickle('/data/vision/torralba/globalstructure/datasets/mannequin/colmap_reconstructions/pose_stats.pckl')
   stats = np.array(list(stats.values()))
   visdom_histogram(stats[:,0])

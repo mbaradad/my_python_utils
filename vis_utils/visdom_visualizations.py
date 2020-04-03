@@ -1,6 +1,9 @@
 import plotly.graph_objs as go
 
+import skvideo
+skvideo.setFFmpegPath('/usr/bin/')
 from skvideo.io import FFmpegWriter
+
 import tempfile
 
 import numpy as np
@@ -14,13 +17,18 @@ from multiprocessing import Queue, Process
 import datetime
 
 import torch
-PYCHARM_VISDOM='PYCHARM_RUN_1'
+
+PYCHARM_VISDOM='PYCHARM_RUN'
 
 if not 'NO_VISDOM' in os.environ.keys():
   with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     import visdom
     global_vis = visdom.Visdom(port=12890, server='http://visiongpu09', use_incoming_socket=True)
+
+def list_of_lists_into_single_list(list_of_lists):
+  flat_list = [item for sublist in list_of_lists for item in sublist]
+  return flat_list
 
 def visdom_heatmap(heatmap, window=None, env=None, vis=None):
   trace = go.Heatmap(z=heatmap)
@@ -69,9 +77,9 @@ def visdom_dict(dict_to_plot, title=None, window=None, env=PYCHARM_VISDOM, vis=N
   html += '</table>'
   vis.text(html, win=window, opts=opts, env=env)
 
-
-
 def vidshow_file_vis(videofile, title=None, window=None, env=None, vis=None, fps=10):
+  # if it fails, check the ffmpeg version.
+  # Depending on the ffmpeg version, sometimes it does not work properly.
   opts = dict()
   if not title is None:
     opts['title'] = title
@@ -112,6 +120,8 @@ def get_video_writer(videofile, fps=10, verbosity=0):
   return writer
 
 def vidshow_vis(frames, title=None, window=None, env=None, vis=None, biggest_dim=None, fps=10):
+  # if it does not work, change the ffmpeg. It was failing using anaconda ffmpeg default video settings,
+  # and was switched to the machine ffmpeg.
   if vis is None:
     vis = global_vis
   if frames.shape[1] == 1 or frames.shape[1] == 3:
@@ -130,7 +140,10 @@ def vidshow_vis(frames, title=None, window=None, env=None, vis=None, biggest_dim
       actual_frame = np.array(np.transpose(scale_image_biggest_dim(np.transpose(frames[i]), biggest_dim)), dtype='uint8')
     writer.writeFrame(actual_frame)
   writer.close()
+
+  os.chmod(videofile, 0o777)
   vidshow_file_vis(videofile, title=title, window=window, env=env, vis=vis, fps=fps)
+  return videofile
 
 def scale_image_biggest_dim(im, biggest_dim):
   #if it is a video, resize inside the video
@@ -165,10 +178,11 @@ def myimresize(img, target_shape, interpolation_mode=cv2.INTER_NEAREST):
 
 class ThreadedVisdomPlotter():
   # plot func receives a dict and gets what it needs to plot
-  def __init__(self, plot_func, use_threading=True, queue_size=10):
+  def __init__(self, plot_func, use_threading=True, queue_size=10, force_except=False):
     self.queue = Queue(queue_size)
     self.plot_func = plot_func
     self.use_threading = use_threading
+    self.force_except = force_except
     def plot_results_process(queue, plot_func):
         # to avoid wasting time making videos
         while True:
@@ -184,7 +198,10 @@ class ThreadedVisdomPlotter():
                     visdom_dict({"queue_put_time": time_put_on_queue}, title=time_put_on_queue, window='params', env=env)
                     print("Plotting...")
                     plot_func(**actual_plot_dict)
+                    continue
             except Exception as e:
+                if self.force_except:
+                  raise e
                 print('Plotting failed wiht exception: ')
                 print(e)
     if self.use_threading:
@@ -223,6 +240,8 @@ class ThreadedVisdomPlotter():
       else:
         self.plot_func(**plot_dict)
     except Exception as e:
+      if self.force_except:
+        raise e
       print('Putting onto plot queue failed with exception:')
       print(e)
 
