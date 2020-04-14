@@ -78,6 +78,43 @@ def select_gpus(gpus_arg):
 def gettimedatestring():
   return datetime.datetime.now().strftime("%m-%d-%H:%M")
 
+
+class ThreadedMultiqueueSafer():
+  def __init__(self, safe_func, use_threading=True, queue_size=20, n_workers=20):
+    self.queues = [Queue(queue_size) for _ in range(n_workers)]
+    self.safe_func = safe_func
+    self.use_threading = use_threading
+    self.n_workers = n_workers
+
+    def safe_results_process(queue, safe_func):
+      while True:
+        if queue.empty():
+          time.sleep(1)
+        else:
+          try:
+            actual_safe_dict = queue.get()
+            safe_func(**actual_safe_dict)
+            continue
+          except Exception as e:
+            print(e)
+
+    if self.use_threading:
+      for i in range(n_workers):
+        Process(target=safe_results_process, args=[self.queues[i], self.safe_func]).start()
+
+  def put_safe_dict(self, safe_dict):
+    if self.use_threading:
+      i = np.random.randint(0, self.n_workers)
+      while self.queues[i].full():
+        print("Safer {} queue is full, waiting...".format(i))
+        time.sleep(1)
+        i = np.random.randint(0, self.n_workers)
+      self.queues[i].put(safe_dict)
+    else:
+      self.safe_func(**safe_dict)
+
+
+
 from multiprocessing import Lock
 
 global lock
@@ -436,17 +473,6 @@ def str2bool(v):
     raise argparse.ArgumentTypeError('Boolean (yes, true, t, y or 1, lower or upper case) string expected.')
 
 
-def add_2d_bbox(im, min_corner_xy, max_corner_xy, color):
-  im = Image.fromarray(im.transpose())
-  draw = ImageDraw.Draw(im)
-
-  draw.line((min_corner_xy[0], min_corner_xy[1], min_corner_xy[0], max_corner_xy[1]), fill=color)
-  draw.line((min_corner_xy[0], min_corner_xy[1], max_corner_xy[0], min_corner_xy[1]), fill=color)
-  draw.line((max_corner_xy[0], min_corner_xy[1], max_corner_xy[0], max_corner_xy[1]), fill=color)
-  draw.line((min_corner_xy[0], max_corner_xy[1], max_corner_xy[0], max_corner_xy[1]), fill=color)
-
-  return np.array(im).transpose()
-
 def add_line(im, origin_x_y, end_x_y, color=(255, 0, 0)):
   im = Image.fromarray(im.transpose())
   draw = ImageDraw.Draw(im)
@@ -455,6 +481,24 @@ def add_line(im, origin_x_y, end_x_y, color=(255, 0, 0)):
 
   return np.array(im).transpose()
 
+def add_bbox(im, x_0_y_0_s, x_1_y_1_s, color=(255, 0, 0), line_width=1):
+  im_with_box = np.array(im).transpose((1, 2, 0))
+  if not type(x_0_y_0_s) is list:
+    x_0_y_0_s = [x_0_y_0_s]
+  if not type(x_1_y_1_s) is list:
+    x_1_y_1_s = [x_1_y_1_s]
+  for i in range(len(x_0_y_0_s)):
+    x_0_y_0 = x_0_y_0_s[i]
+    x_1_y_1 = x_1_y_1_s[i]
+    if type(color) is list:
+      actual_color = tuple(color[i])
+    else:
+      actual_color = color
+    im_with_box = cv2.rectangle(im_with_box, tuple(np.array(x_0_y_0, dtype='int')), tuple(np.array(x_1_y_1, dtype='int')), actual_color, line_width)
+  if type(im_with_box) is np.ndarray:
+    return im_with_box.transpose((2, 0, 1))
+  else:
+    return np.array(im_with_box.get()).transpose((2, 0, 1))
 
 def add_squared_bbox(im, centers_x_y, box_width=5, color=(255, 0, 0), line_width=1):
   im_with_box = np.array(im).transpose((1, 2, 0))
@@ -471,6 +515,26 @@ def add_squared_bbox(im, centers_x_y, box_width=5, color=(255, 0, 0), line_width
     return im_with_box.transpose((2, 0, 1))
   else:
     return np.array(im_with_box.get()).transpose((2, 0, 1))
+
+def add_text(im, lines, starts_x_y, color=(255, 0, 0), font_scale=1, line_width=2):
+  im_with_text = np.array(im).transpose((1, 2, 0))
+  if not type(starts_x_y) is list:
+    starts_x_y = [starts_x_y]
+  if not type(lines) is list:
+    lines = [lines]
+  assert len(lines) == len(starts_x_y)
+  for i in range(len(starts_x_y)):
+    start_x_y = starts_x_y[i]
+    text = lines[i]
+    if type(color) is list:
+      actual_color = tuple(color[i])
+    else:
+      actual_color = color
+    im_with_text = cv2.putText(im_with_text, text, tuple(np.array(start_x_y, dtype='int')), cv2.FONT_HERSHEY_SIMPLEX, font_scale, actual_color, line_width)
+  if type(im_with_text) is np.ndarray:
+    return im_with_text.transpose((2, 0, 1))
+  else:
+    return np.array(im_with_text.get()).transpose((2, 0, 1))
 
 
 def add_circle(im, centers_x_y, radius=5, color=(255, 0, 0)):
@@ -1459,8 +1523,13 @@ def show_pointcloud(original_coords, original_colors=None, title='none', win=Non
 
   return
 
-def listdir(folder, prepend_folder=False, extension=None):
+def listdir(folder, prepend_folder=False, extension=None, type=None):
+  assert type in [None, 'file', 'folder'], "Type must be None, 'file' or 'folder'"
   files = [k for k in os.listdir(folder) if (True if extension is None else k.endswith(extension))]
+  if type == 'folder':
+    files = [k for k in files if os.path.isdir(folder + '/' + k)]
+  elif type == 'file':
+    files = [k for k in files if not os.path.isdir(folder + '/' + k)]
   if prepend_folder:
     files = [folder + '/' + f for f in files]
   return files
@@ -1688,6 +1757,11 @@ def save_np_array(array, filename):
 def define_and_make_dir(dir):
   os.makedirs(dir, exist_ok=True)
   return dir
+
+def make_dir_without_file(file):
+  folder, file = os.path.split(file)
+  if len(folder) > 0:
+    os.makedirs(folder, exist_ok=True)
 
 
 def mkdir(dir):
@@ -2482,7 +2556,7 @@ class FixSampleDataset:
 
   def __len__(self):
     if self.replication_factor == -1:
-      return len(self.dataset)
+      return len(self.fixed_samples)
     else:
       return len(self.fixed_samples) * self.replication_factor
 
