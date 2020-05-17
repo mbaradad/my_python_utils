@@ -89,7 +89,7 @@ class ThreadedMultiqueueSafer():
     def safe_results_process(queue, safe_func):
       while True:
         if queue.empty():
-          time.sleep(1)
+          time.sleep(0.1)
         else:
           try:
             actual_safe_dict = queue.get()
@@ -113,7 +113,8 @@ class ThreadedMultiqueueSafer():
     else:
       self.safe_func(**safe_dict)
 
-
+def moving_average(x, w):
+  return np.convolve(x, np.ones(w), 'valid') / w
 
 from multiprocessing import Lock
 
@@ -316,6 +317,8 @@ def visdom_line(arrays, X=None, names=None, env=None, win=None, title=None, vis=
   opt['fillarea'] = False
   if not names is None:
     opt['legend'] = names
+  if not title is None:
+    opt['title'] = title
   if type(arrays) is list:
     arrays = np.array(arrays)
     arrays = arrays.transpose()

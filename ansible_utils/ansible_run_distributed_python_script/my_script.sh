@@ -14,6 +14,6 @@ fi
 
 source activate default_env37
 source $HOME/.bash_commands/all
-cd $HOME/big_brother;
+cd $HOME/gazegraph;
 export PYTHONPATH=.
-python data/data_splitter.py > "ansible_output/big_brother_split_$HOSTNAME"
+python movies_data_generation/scenes/compute_scenes.py #> "ansible_output/gaze_graph_split_$HOSTNAME"

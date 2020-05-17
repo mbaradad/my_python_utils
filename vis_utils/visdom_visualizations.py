@@ -96,8 +96,10 @@ def vidshow_file_vis(videofile, title=None, window=None, env=None, vis=None, fps
   vis.video(videofile=videofile, win=window, opts=opts, env=env)
 
 class MyVideoWriter():
-  def __init__(self, *args, **kwargs):
-    self.video_writer = FFmpegWriter(*args, **kwargs)
+  def __init__(self, file, fps=None, *args, **kwargs):
+    if not fps is None:
+      kwargs['inputdict'] = {'-r': str(fps)}
+    self.video_writer = FFmpegWriter(file, *args, **kwargs)
 
   def writeFrame(self, im):
     if len(im.shape) == 3 and im.shape[0] == 3:
@@ -113,7 +115,10 @@ class MyVideoWriter():
 
 class MyVideoReader():
   def __init__(self, video_file):
-    self.vid = imageio.get_reader(video_file)
+    if video_file.endswith('.m4v'):
+      self.vid = imageio.get_reader(video_file, format='.mp4')
+    else:
+      self.vid = imageio.get_reader(video_file)
     self.frame_i = 0
 
   def get_next_frame(self):
@@ -142,6 +147,9 @@ class MyVideoReader():
     frame = self.get_next_frame()
     self.position_cursor_frame(old_frame_i)
     return frame
+
+  def is_opened(self):
+    return not self.vid.closed
 
   # encoded as apple ProRes mov
 # ffmpeg -i input.avi -c:v prores_ks -profile:v 3 -c:a pcm_s16le output.mov
@@ -265,6 +273,22 @@ class ThreadedVisdomPlotter():
         list_or_dict[k] = self._detach_dict_or_list_torch(list_or_dict[k])
     return list_or_dict
 
+  def clear_queue(self):
+    while not self.queue.empty():
+      self.queue.get()
+
+  def is_queue_full(self):
+    if not self.use_threading:
+      return False
+    else:
+      return self.queue.full()
+
+  def n_queue_elements(self):
+      if not self.use_threading:
+        return 0
+      else:
+        return self.queue.qsize()
+
   def put_plot_dict(self, plot_dict):
     try:
       assert type(plot_dict) is dict
@@ -285,8 +309,20 @@ class ThreadedVisdomPlotter():
 
 
 if __name__ == '__main__':
+  def plot_func(env):
+    time.sleep(1)
+    #raise Exception("Test exception!")
+  a = ThreadedVisdomPlotter(plot_func,  use_threading=True, queue_size=10, force_except=False)
+  for k in range(20):
+    a.put_plot_dict({'env': 'env'})
+    if a.is_queue_full():
+      a.clear_queue()
+    print(a.queue.qsize())
+
   heatmap = [[1, 20, 30],
    [20, 1, 60],
    [30, 60, 1]]
   heatmap = np.random.normal(scale=1, size=(36,10))
   visdom_heatmap(np.array(heatmap))
+
+

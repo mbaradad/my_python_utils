@@ -77,7 +77,6 @@ def rigid_transform_3D_np(A, B):
 
 
 
-
 import sys
 from my_python_utils.common_utils import *
 

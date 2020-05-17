@@ -12,13 +12,15 @@ def parallel_delete(foldername, max_level_to_parallelize, workers=50):
     except:
       pass
 
-  for actual_level in range(max_level_to_parallelize, 0, -1):
+  for actual_level in range(max_level_to_parallelize, -1, -1):
     print('Listing at level: {}'.format(actual_level))
     level_files = glob.glob(foldername + '/' + '*/' * actual_level)
     #level_dirs = filter(os.path.isdir, level_filter)
+    print('{} files found at level: {}'.format(len(level_files), actual_level))
     print('Starting parallel delete at level: {}'.format(actual_level))
     p_map(single_delete, level_files, num_cpus = workers)
     print('End parallel delete at level: {}'.format(actual_level))
 
 if __name__ == "__main__":
-  parallel_delete('/data/vision/torralba/scratch/mbaradad/big_brother/splitted_videos/season_21', max_level_to_parallelize=3)
+  parallel_delete('/data/vision/torralba/scratch/mbaradad/movies/gt_gaze/', max_level_to_parallelize=2)
+  a = 1
