@@ -1012,15 +1012,15 @@ def transform_to_o3d_trajectory(trajectory, height, width, example_trajectory):
 
   return trajectory
 
-def custom_draw_geometry_with_camera_trajectory(trajectory, pcd, video_writer=None, background_color=(129, 125, 125),
-                                                render_height=1080, render_width=1920, axis=False,
-                                                break_after_completion=True, meshify=True, add_y_0_plane=False):
-  custom_draw_geometry_with_camera_trajectory.index = -1
+def draw_properties(trajectory, pcd, video_writer=None, background_color=(129, 125, 125),
+                    render_height=1080, render_width=1920, axis=False,
+                    break_after_completion=True, meshify=True, add_y_0_plane=False):
+  draw_properties.index = -1
   initial_pos = np.array((0,0.7,0))
 
   example_trajectory = create_default_trajectory(initial_pos, render_height, render_width)
-  custom_draw_geometry_with_camera_trajectory.trajectory = transform_to_o3d_trajectory(trajectory, render_height, render_width, example_trajectory)
-  custom_draw_geometry_with_camera_trajectory.vis = o3d.visualization.Visualizer()
+  draw_properties.trajectory = transform_to_o3d_trajectory(trajectory, render_height, render_width, example_trajectory)
+  draw_properties.vis = o3d.visualization.Visualizer()
   images = []
   video_writer = video_writer
 
@@ -1033,7 +1033,7 @@ def custom_draw_geometry_with_camera_trajectory(trajectory, pcd, video_writer=No
     # 3. Set camera
     # 4. (Re-render)
     ctr = vis.get_view_control()
-    glb = custom_draw_geometry_with_camera_trajectory
+    glb = draw_properties
     if glb.index >= 0:
       image = vis.capture_screen_float_buffer(False)
       current_frame = np.array(image)
@@ -1052,11 +1052,11 @@ def custom_draw_geometry_with_camera_trajectory(trajectory, pcd, video_writer=No
       ctr.convert_from_pinhole_camera_parameters(glb.trajectory.parameters[glb.index])
     else:
       if break_after_completion:
-        custom_draw_geometry_with_camera_trajectory.vis.register_animation_callback(None)
+        draw_properties.vis.register_animation_callback(None)
         raise Exception("Finished!")
     return False
 
-  vis = custom_draw_geometry_with_camera_trajectory.vis
+  vis = draw_properties.vis
   vis.create_window(width=render_width, height=render_height, left=0, top=0)
   if meshify:
     pcd_with_normals = o3d.geometry.PointCloud(pcd)
@@ -1196,7 +1196,6 @@ def draw_horizon_line(image, rotation_mat=None, pitch_angle=None, roll_angle=Non
 # x11vnc -display :1
 # then open vncviewer remotely
 
-
 def create_video_from_pointcloud_and_trajectory(original_coords, original_colors, trajectory,
                                                 video_writer=None, background_color=(255, 255, 255), display_number=1, meshify=True):
   coords, colors = prepare_single_pointcloud_and_colors(original_coords, original_colors)
@@ -1210,8 +1209,8 @@ def create_video_from_pointcloud_and_trajectory(original_coords, original_colors
   pcd.colors = o3d.utility.Vector3dVector(colors)
   try:
     os.environ['DISPLAY'] = ':' + str(display_number)
-    custom_draw_geometry_with_camera_trajectory(trajectory, pcd, video_writer=video_writer,
-                                                background_color=background_color, render_height=int(1080/2), render_width=int(1920/2), meshify=meshify)
+    draw_properties(trajectory, pcd, video_writer=video_writer,
+                    background_color=background_color, render_height=int(1080/2), render_width=int(1920/2), meshify=meshify)
     if not video_writer is None:
       video_writer.close()
   except Exception as e:
