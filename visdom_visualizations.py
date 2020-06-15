@@ -16,11 +16,14 @@ import datetime
 import torch
 PYCHARM_VISDOM='PYCHARM_RUN_1'
 
+def instantiante_visdom(port, server='http://localhost'):
+  return visdom.Visdom(port=port, server=server, use_incoming_socket=True)
+
 if not 'NO_VISDOM' in os.environ.keys():
   with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     import visdom
-    global_vis = visdom.Visdom(port=12890, server='http://visiongpu09', use_incoming_socket=True)
+    global_vis = instantiante_visdom(12890, server='http://visiongpu09')
 
 def visdom_heatmap(heatmap, window=None, env=None, vis=None):
   trace = go.Heatmap(z=heatmap)
