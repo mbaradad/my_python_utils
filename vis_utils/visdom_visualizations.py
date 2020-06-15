@@ -1,20 +1,27 @@
 import plotly.graph_objs as go
 
-from skvideo.io import FFmpegWriter
+import skvideo
+skvideo.setFFmpegPath('/usr/bin/')
+from skvideo.io import FFmpegWriter, FFmpegReader
+
 import tempfile
 
 import numpy as np
 import time
+import imageio
 
 import os
 import warnings
 import cv2
 
+import math
+
 from multiprocessing import Queue, Process
 import datetime
 
 import torch
-PYCHARM_VISDOM='PYCHARM_RUN_1'
+
+PYCHARM_VISDOM='PYCHARM_RUN'
 
 def instantiante_visdom(port, server='http://localhost'):
   return visdom.Visdom(port=port, server=server, use_incoming_socket=True)
@@ -24,6 +31,10 @@ if not 'NO_VISDOM' in os.environ.keys():
     warnings.simplefilter("ignore")
     import visdom
     global_vis = instantiante_visdom(12890, server='http://visiongpu09')
+
+def list_of_lists_into_single_list(list_of_lists):
+  flat_list = [item for sublist in list_of_lists for item in sublist]
+  return flat_list
 
 def visdom_heatmap(heatmap, window=None, env=None, vis=None):
   trace = go.Heatmap(z=heatmap)
@@ -72,9 +83,9 @@ def visdom_dict(dict_to_plot, title=None, window=None, env=PYCHARM_VISDOM, vis=N
   html += '</table>'
   vis.text(html, win=window, opts=opts, env=env)
 
-
-
 def vidshow_file_vis(videofile, title=None, window=None, env=None, vis=None, fps=10):
+  # if it fails, check the ffmpeg version.
+  # Depending on the ffmpeg version, sometimes it does not work properly.
   opts = dict()
   if not title is None:
     opts['title'] = title
@@ -88,8 +99,10 @@ def vidshow_file_vis(videofile, title=None, window=None, env=None, vis=None, fps
   vis.video(videofile=videofile, win=window, opts=opts, env=env)
 
 class MyVideoWriter():
-  def __init__(self, *args, **kwargs):
-    self.video_writer = FFmpegWriter(*args, **kwargs)
+  def __init__(self, file, fps=None, *args, **kwargs):
+    if not fps is None:
+      kwargs['inputdict'] = {'-r': str(fps)}
+    self.video_writer = FFmpegWriter(file, *args, **kwargs)
 
   def writeFrame(self, im):
     if len(im.shape) == 3 and im.shape[0] == 3:
@@ -103,7 +116,45 @@ class MyVideoWriter():
   def close(self):
     self.video_writer.close()
 
-# encoded as apple ProRes mov
+class MyVideoReader():
+  def __init__(self, video_file):
+    if video_file.endswith('.m4v'):
+      self.vid = imageio.get_reader(video_file, format='.mp4')
+    else:
+      self.vid = imageio.get_reader(video_file)
+    self.frame_i = 0
+
+  def get_next_frame(self):
+    try:
+      return np.array(self.vid.get_next_data().transpose((2,0,1)))
+    except:
+      return None
+
+  def get_n_frames(self):
+    return int(math.floor(self.get_duration_seconds() * self.get_fps()))
+
+  def get_duration_seconds(self):
+    return self.vid._meta['duration']
+
+  def get_fps(self):
+    return self.vid._meta['fps']
+
+  def position_cursor_frame(self, i):
+    assert i < self.get_n_frames()
+    self.frame_i = i
+    self.vid.set_image_index(self.frame_i)
+
+  def get_frame_i(self, i):
+    old_frame_i = self.frame_i
+    self.position_cursor_frame(i)
+    frame = self.get_next_frame()
+    self.position_cursor_frame(old_frame_i)
+    return frame
+
+  def is_opened(self):
+    return not self.vid.closed
+
+  # encoded as apple ProRes mov
 # ffmpeg -i input.avi -c:v prores_ks -profile:v 3 -c:a pcm_s16le output.mov
 # https://video.stackexchange.com/questions/14712/how-to-encode-apple-prores-on-windows-or-linux
 def get_video_writer(videofile, fps=10, verbosity=0):
@@ -114,7 +165,11 @@ def get_video_writer(videofile, fps=10, verbosity=0):
                                                                     '-c:a': 'pcm_s16le'})
   return writer
 
+
+
 def vidshow_vis(frames, title=None, window=None, env=None, vis=None, biggest_dim=None, fps=10):
+  # if it does not work, change the ffmpeg. It was failing using anaconda ffmpeg default video settings,
+  # and was switched to the machine ffmpeg.
   if vis is None:
     vis = global_vis
   if frames.shape[1] == 1 or frames.shape[1] == 3:
@@ -133,7 +188,10 @@ def vidshow_vis(frames, title=None, window=None, env=None, vis=None, biggest_dim
       actual_frame = np.array(np.transpose(scale_image_biggest_dim(np.transpose(frames[i]), biggest_dim)), dtype='uint8')
     writer.writeFrame(actual_frame)
   writer.close()
+
+  os.chmod(videofile, 0o777)
   vidshow_file_vis(videofile, title=title, window=window, env=env, vis=vis, fps=fps)
+  return videofile
 
 def scale_image_biggest_dim(im, biggest_dim):
   #if it is a video, resize inside the video
@@ -168,10 +226,11 @@ def myimresize(img, target_shape, interpolation_mode=cv2.INTER_NEAREST):
 
 class ThreadedVisdomPlotter():
   # plot func receives a dict and gets what it needs to plot
-  def __init__(self, plot_func, use_threading=True, queue_size=10):
+  def __init__(self, plot_func, use_threading=True, queue_size=10, force_except=False):
     self.queue = Queue(queue_size)
     self.plot_func = plot_func
     self.use_threading = use_threading
+    self.force_except = force_except
     def plot_results_process(queue, plot_func):
         # to avoid wasting time making videos
         while True:
@@ -187,7 +246,10 @@ class ThreadedVisdomPlotter():
                     visdom_dict({"queue_put_time": time_put_on_queue}, title=time_put_on_queue, window='params', env=env)
                     print("Plotting...")
                     plot_func(**actual_plot_dict)
+                    continue
             except Exception as e:
+                if self.force_except:
+                  raise e
                 print('Plotting failed wiht exception: ')
                 print(e)
     if self.use_threading:
@@ -214,6 +276,22 @@ class ThreadedVisdomPlotter():
         list_or_dict[k] = self._detach_dict_or_list_torch(list_or_dict[k])
     return list_or_dict
 
+  def clear_queue(self):
+    while not self.queue.empty():
+      self.queue.get()
+
+  def is_queue_full(self):
+    if not self.use_threading:
+      return False
+    else:
+      return self.queue.full()
+
+  def n_queue_elements(self):
+      if not self.use_threading:
+        return 0
+      else:
+        return self.queue.qsize()
+
   def put_plot_dict(self, plot_dict):
     try:
       assert type(plot_dict) is dict
@@ -226,14 +304,28 @@ class ThreadedVisdomPlotter():
       else:
         self.plot_func(**plot_dict)
     except Exception as e:
+      if self.force_except:
+        raise e
       print('Putting onto plot queue failed with exception:')
       print(e)
 
 
 
 if __name__ == '__main__':
+  def plot_func(env):
+    time.sleep(1)
+    #raise Exception("Test exception!")
+  a = ThreadedVisdomPlotter(plot_func,  use_threading=True, queue_size=10, force_except=False)
+  for k in range(20):
+    a.put_plot_dict({'env': 'env'})
+    if a.is_queue_full():
+      a.clear_queue()
+    print(a.queue.qsize())
+
   heatmap = [[1, 20, 30],
    [20, 1, 60],
    [30, 60, 1]]
   heatmap = np.random.normal(scale=1, size=(36,10))
   visdom_heatmap(np.array(heatmap))
+
+

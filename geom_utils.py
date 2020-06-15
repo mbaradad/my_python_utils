@@ -11,7 +11,28 @@ import torch
   t = 3x1 column vector
 '''
 
-def rigid_transform_3D(A, B):
+# https://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d
+def transform_unit_A_unit_B(a, b):
+  raise Exception("TODO!!")
+  is_numpy = type(a) is np.ndarray
+  if is_numpy:
+    a = torch.Tensor(a)
+    b = torch.Tensor(b)
+  assert len(a.shape) == 2
+  assert a.shape == b.shape
+  assert a.shape[0] == 3 and a.shape[1] == 1
+  v = torch.cross(a, b)
+  s = torch.norm(v)
+  c = (a * b).sum(0)
+
+  R = torch.eye(3) + cross_product_mat_sub_x_torch(v) + cross_product_mat_sub_x_torch(v)**2 * (1 - c) / s**2
+
+  if is_numpy:
+    return R.numpy()
+
+  return R
+
+def rigid_transform_3D_np(A, B):
   assert len(A) == len(B)
   if type(A) is np.ndarray:
     A = np.mat(A)
@@ -53,7 +74,6 @@ def rigid_transform_3D(A, B):
   t = -R * centroid_A + centroid_B
 
   return np.array(R), np.array(t)
-
 
 
 
