@@ -20,3 +20,5 @@ pathos
 librosa
 tqdm
 h5py
+kornia
+pypng
