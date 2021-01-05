@@ -660,45 +660,51 @@ def add_axis_to_image(im):
   data = data.transpose((2,0,1))
   return data
 
+def preprocess_im_to_plot(im, normalize_image=True):
+  if type(im) is list:
+    for k in range(len(im)):
+      im[k] = tonumpy(im[k])
+    im = np.array(im)
+  if type(im) == 'string':
+    # it is a path
+    pic = Image.open(im)
+    im = np.array(pic, dtype='float32')
+  im = tonumpy(im)
+  if im.dtype == np.bool:
+    im = im * 1.0
+  if im.dtype == 'uint8':
+    im = im / 255.0
+  if len(im.shape) > 4:
+    raise Exception('Im has more than 4 dims')
+  if len(im.shape) == 4 and im.shape[0] == 1:
+    im = im[0, :, :, :]
+  if len(im.shape) == 3 and im.shape[-1] in [1, 3]:
+    # put automatically channel first if its last
+    im = im.transpose((2, 0, 1))
+  if len(im.shape) == 2:
+    # expand first if 1 channel image
+    im = im[None, :, :]
+  range_min, range_max = im.min(), im.max()
+
+  if normalize_image and im.max() != im.min():
+    im = (im - im.min()) / (im.max() - im.min())
+  return im, range_min, range_max
 
 def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True,
            max_batch_display=10, window=None, env=None, fps=10, vis=None,
            add_ranges=False, return_image=False, add_axis=False):
   if env is None:
     env = PYCHARM_VISDOM
-  if type(im) is list:
-    for k in range(len(im)):
-      im[k] = tonumpy(im[k])
-    im = np.array(im)
   if window is None:
     window = title
-  if type(im) == 'string':
-    #it is a path
-    pic = Image.open(im)
-    im = np.array(pic, dtype='float32')
-  im = tonumpy(im)
-  postfix = ''
-  if im.dtype == np.bool:
-    im = im*1.0
-  if add_ranges:
-    postfix = '_max_{:.2f}_min_{:.2f}'.format(im.max(), im.min())
-  if im.dtype == 'uint8':
-    im = im / 255.0
-  if len(im.shape) > 4:
-    raise Exception('Im has more than 4 dims')
-  if len(im.shape) == 4 and im.shape[0] == 1:
-   im = im[0,:,:,:]
-  if len(im.shape) == 3 and im.shape[-1] in [1,3]:
-    #put automatically channel first if its last
-    im = im.transpose((2,0,1))
 
-  if len(im.shape) == 2:
-    #expand first if 1 channel image
-    im = im[None,:,:]
+  im, range_min, range_max = preprocess_im_to_plot(im, normalize_image)
+  postfix = ''
+  if add_ranges:
+    postfix = '_max_{:.2f}_min_{:.2f}'.format()
   if not biggest_dim is None and len(im.shape) == 3:
     im = scale_image_biggest_dim(im, biggest_dim)
-  if normalize_image and im.max() != im.min():
-    im = (im - im.min())/(im.max() - im.min())
+
 
   if add_axis:
     if len(im.shape) == 3:
@@ -2573,38 +2579,4 @@ class FixSampleDataset:
     return self.fixed_samples[item]
 
 if __name__ == '__main__':
-  #keys = list(os.environ.keys())
-  #keys.sort()
-  #for k in keys:
-  #  print(k + ': ' + os.environ[k])
-
-  vid = np.zeros((10,3,100,100))
-  filename = imshow(vid, title='test_1', env='test_video')
-  vidshow_file_vis(filename, title='asdf', env='test_video')
-  exit(0)
-  stats = load_from_pickle('/data/vision/torralba/globalstructure/datasets/mannequin/colmap_reconstructions/pose_stats.pckl')
-  stats = np.array(list(stats.values()))
-  visdom_histogram(stats[:,0])
-  files = listdir('/data/vision/torralba/speechvision/gazegraph/megadepth/10_Things_I_Hate_About_You/', prepend_folder=True)
-  random.shuffle(files)
-  for f in files:
-    fs = listdir(f, True)
-    if len(fs) > 0:
-      res = np.load(fs[0])
-      imshow(res['image'], title='image')
-      show_pointcloud(res['world_coords'], res['image'], title='plc')
-  elems_to_plot = listdir('plcs_to_plot', True)
-  for elem in elems_to_plot:
-    elem = np.load(elem)
-    create_video_from_pointcloud(elem['coords_gt'], elem['images'])
-    create_video_from_pointcloud(elem['coords_predicted'], elem['images'])
-
-  all_items = read_text_file_lines('/data/vision/torralba/scratch/mbaradad/mannequin/postprocess_reconstructions/max_width_1080/all_flows_to_compute_fwd')
-  for item in all_items:
-    im_1 = cv2_imread(item.split(' ')[0])
-    im_2 = cv2_imread(item.split(' ')[1])
-    flow = read_flow(item.split(' ')[2])
-    im_flow = flow_to_image(flow)
-    imshow(im_1, title='im1')
-    imshow(im_2, title='im2')
-    imshow(im_flow, title='flow')
+  a = 1
