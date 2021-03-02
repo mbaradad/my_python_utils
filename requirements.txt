@@ -23,3 +23,4 @@ h5py
 open3d==0.8.0
 seaborn
 kornia
+pypng

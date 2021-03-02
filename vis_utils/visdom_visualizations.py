@@ -23,11 +23,14 @@ import torch
 
 PYCHARM_VISDOM='PYCHARM_RUN'
 
+def instantiante_visdom(port, server='http://localhost'):
+  return visdom.Visdom(port=port, server=server, use_incoming_socket=True)
+
 if not 'NO_VISDOM' in os.environ.keys():
   with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     import visdom
-    global_vis = visdom.Visdom(port=12890, server='http://visiongpu09', use_incoming_socket=True)
+    global_vis = instantiante_visdom(12890, server='http://visiongpu09')
 
 def list_of_lists_into_single_list(list_of_lists):
   flat_list = [item for sublist in list_of_lists for item in sublist]
