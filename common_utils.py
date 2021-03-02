@@ -485,7 +485,7 @@ def add_line(im, origin_x_y, end_x_y, color=(255, 0, 0)):
   return np.array(im).transpose()
 
 def add_bbox(im, x_0_y_0_s, x_1_y_1_s, color=(255, 0, 0), line_width=1):
-  im_with_box = np.array(im).transpose((1, 2, 0))
+  im_with_box = np.ascontiguousarray(np.array(im).transpose((1, 2, 0)))
   if not type(x_0_y_0_s) is list:
     x_0_y_0_s = [x_0_y_0_s]
   if not type(x_1_y_1_s) is list:
@@ -520,7 +520,7 @@ def add_squared_bbox(im, centers_x_y, box_width=5, color=(255, 0, 0), line_width
     return np.array(im_with_box.get()).transpose((2, 0, 1))
 
 def add_text(im, lines, starts_x_y, color=(255, 0, 0), font_scale=1, line_width=2):
-  im_with_text = np.array(im).transpose((1, 2, 0))
+  im_with_text = np.ascontiguousarray(np.array(im).transpose((1, 2, 0)))
   if not type(starts_x_y) is list:
     starts_x_y = [starts_x_y]
   if not type(lines) is list:
@@ -1912,6 +1912,8 @@ def send_graph_to_device(g, device):
   return g
 
 def tonumpy(tensor):
+  if type(tensor) is Image:
+    return np.array(tensor).transpose((2,0,1))
   if type(tensor) is list:
     return np.array(tensor)
   if type(tensor) is np.ndarray:
@@ -2608,3 +2610,20 @@ if __name__ == '__main__':
     imshow(im_1, title='im1')
     imshow(im_2, title='im2')
     imshow(im_flow, title='flow')
+
+
+def pad_vector(vec, pad, axis=0, value=0):
+  """
+  args:
+      vec - vector to pad
+      pad - the size to pad to
+      axis - dimension to pad
+
+  return:
+      a new tensor padded to 'pad' in dimension 'axis'
+  """
+  assert type(vec) is np.ndarray, "pad_vector only implemented for numpy array"
+
+  pad_size = list(vec.shape)
+  pad_size[axis] = pad - vec.shape[axis]
+  return np.concatenate([vec, value*np.ones(pad_size, dtype=vec.dtype)], axis=axis)
