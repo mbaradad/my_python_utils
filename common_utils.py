@@ -56,6 +56,10 @@ from my_python_utils.logging_utils import *
 
 from sklearn.manifold import TSNE
 
+import GPUtil
+
+import tempfile
+
 from my_python_utils.geom_utils import *
 
 global VISDOM_BIGGEST_DIM
@@ -250,6 +254,8 @@ def merge_side_by_side(im1, im2):
   im_canvas[:,:,im1.shape[-1]:] = im2
   return im_canvas
 
+def is_pycharm_run():
+  return'PYCHARM_RUN' in os.environ.keys()
 
 def visdom_histogram(array, win=None, title=None, env=None, vis=None):
   if env is None:
@@ -305,7 +311,7 @@ def visdom_boxplot(array, env=None, win='test', title=None, vis=None):
   opt = dict()
   vis.boxplot(array, env=env, win=win, opts=opt)
 
-def visdom_line(arrays, X=None, names=None, env=None, win=None, title=None, vis=None):
+def visdom_line(Ys, X=None, names=None, env=None, win=None, title=None, vis=None):
   if env is None:
     env = PYCHARM_VISDOM
   if vis is None:
@@ -319,13 +325,13 @@ def visdom_line(arrays, X=None, names=None, env=None, win=None, title=None, vis=
     opt['legend'] = names
   if not title is None:
     opt['title'] = title
-  if type(arrays) is list:
-    arrays = np.array(arrays)
-    arrays = arrays.transpose()
+  if type(Ys) is list:
+    Ys = np.array(Ys)
+    Ys = Ys.transpose()
   else:
     # inner dimension is the data, but visdom expects the opposite
-    arrays = arrays.transpose()
-  vis.line(np.array(arrays), X=X, env=env, win=win, opts=opt)
+    Ys = Ys.transpose()
+  vis.line(np.array(Ys), X=X, env=env, win=win, opts=opt)
 
 def save_visdom_plot(win, save_path):
   return
@@ -692,7 +698,7 @@ def preprocess_im_to_plot(im, normalize_image=True):
 
 def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True,
            max_batch_display=10, window=None, env=None, fps=10, vis=None,
-           add_ranges=False, return_image=False, add_axis=False):
+           add_ranges=False, return_image=False, add_axis=False, gif=False):
   if env is None:
     env = PYCHARM_VISDOM
   if window is None:
@@ -705,7 +711,6 @@ def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True,
   if not biggest_dim is None and len(im.shape) == 3:
     im = scale_image_biggest_dim(im, biggest_dim)
 
-
   if add_axis:
     if len(im.shape) == 3:
       im = add_axis_to_image(im)
@@ -717,7 +722,12 @@ def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True,
     if window is None:
       window = title
     if len(im.shape) == 4:
-      return vidshow_vis(im, title=title, window=window, env=env, vis=vis, biggest_dim=biggest_dim, fps=fps)
+      if not gif:
+        return vidshow_vis(im, title=title, window=window, env=env, vis=vis, biggest_dim=biggest_dim, fps=fps)
+      else:
+        temp_name = '{}/{}.gif'.format(tempfile._get_default_tempdir(), next(tempfile._get_candidate_names()))
+        make_gif(im, path=temp_name, fps=fps, biggest_dim=biggest_dim)
+        return vidshow_gif_path(temp_name, title=title, win=window, env=env, vis=vis)
     else:
       imshow_vis(im, title=title + postfix, win=window, env=env, vis=vis)
   else:
@@ -2578,5 +2588,27 @@ class FixSampleDataset:
     item = np.random.randint(0, len(self.fixed_samples))
     return self.fixed_samples[item]
 
+def get_gpu_stats(counts=10, desired_time_diffs_ms=0):
+  gpus = [dict(gpu=0, mem=0) for _ in GPUtil.getGPUs()]
+  for _ in range(counts):
+    t0 = time.time()
+    for gpu_i, gpu in enumerate(GPUtil.getGPUs()):
+      gpus[gpu_i]['gpu_usage'] += gpu.load
+      gpus[gpu_i]['mem_usage'] += gpu.memoryUsed / gpu.memoryTotal
+      time_diff_s = time.time() - t0
+      if time_diff_s < desired_time_diffs_ms / 1000.0:
+        time.sleep((desired_time_diffs_ms - time_diff_s) / 1000.0)
+      t0 = time.time()
+
+
+  for gpu_i, gpu in enumerate(GPUtil.getGPUs()):
+    gpus[gpu_i]['gpu_usage'] /= counts
+    gpus[gpu_i]['mem_usage'] /= counts
+    gpus[gpu_i]['mem_total'] = gpu.memoryTotal
+
+  return gpus
+
 if __name__ == '__main__':
+  gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)
+  print(gpus)
   a = 1
