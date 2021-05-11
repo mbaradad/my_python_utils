@@ -2,7 +2,11 @@
 from __future__ import division
 # we need to import this before torch:
 # https://github.com/pytorch/pytorch/issues/19739
-import open3d as o3d
+
+try:
+  import open3d as o3d
+except:
+  pass
 import torch
 from pathlib import Path
 
@@ -70,6 +74,7 @@ def get_hostname():
 
 def select_gpus(gpus_arg):
   #so that default gpu is one of the selected, instead of 0
+  gpus_arg = str(gpus_arg)
   if len(gpus_arg) > 0:
     os.environ['CUDA_VISIBLE_DEVICES'] = gpus_arg
     gpus = list(range(len(gpus_arg.split(','))))
@@ -77,6 +82,15 @@ def select_gpus(gpus_arg):
     os.environ['CUDA_VISIBLE_DEVICES'] = ''
     gpus = []
   print('CUDA_VISIBLE_DEVICES={}'.format(os.environ['CUDA_VISIBLE_DEVICES']))
+
+  flag = 0
+  for i in range(len(gpus)):
+    for i1 in range(len(gpus)):
+      if i != i1:
+        if gpus[i] == gpus[i1]:
+          flag = 1
+  assert not flag, "Gpus repeated: {}".format(gpus)
+
   return gpus
 
 def gettimedatestring():
@@ -311,6 +325,7 @@ def visdom_boxplot(array, env=None, win='test', title=None, vis=None):
   opt = dict()
   vis.boxplot(array, env=env, win=win, opts=opt)
 
+# If multiple Ys lines are provided, first dimension is # of lines, second is # of data points
 def visdom_line(Ys, X=None, names=None, env=None, win=None, title=None, vis=None):
   if env is None:
     env = PYCHARM_VISDOM
@@ -331,6 +346,14 @@ def visdom_line(Ys, X=None, names=None, env=None, win=None, title=None, vis=None
   else:
     # inner dimension is the data, but visdom expects the opposite
     Ys = Ys.transpose()
+  if type(X) is list:
+    Xs = np.array(X)
+  if len(Ys.shape) == 2:
+    if Ys.shape[1] == 1:
+      Ys = Ys[:,0]
+    elif not X is None:
+      assert len(X.shape) == 1, "X should only have one dimension, as it is common for all Ys!"
+      assert X.shape[0] == Ys.shape[0], "Data and X should have the same number of points"
   vis.line(np.array(Ys), X=X, env=env, win=win, opts=opt)
 
 def save_visdom_plot(win, save_path):
@@ -2607,6 +2630,18 @@ def get_gpu_stats(counts=10, desired_time_diffs_ms=0):
     gpus[gpu_i]['mem_total'] = gpu.memoryTotal
 
   return gpus
+
+'''
+def make_scratch_folder(directory):
+  # creates a folder in scratch disk and links it to directory
+  scratch = '/data/vision/torralba/scratch/mbaradad/scratch_folders'
+  desired_directory_absolute_path = os.path.abspath(directory)
+  scratch_rel_directory = desired_directory_absolute_path.replace('/','_')
+  scratch_abs_directory = '{}/{}'.format(scratch, scratch_rel_directory)
+  os.makedirs(scratch_abs_directory, exist_ok=True)
+
+  os.symlink(scratch_abs_directory, desired_directory_absolute_path)
+'''
 
 if __name__ == '__main__':
   gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)

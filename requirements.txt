@@ -22,3 +22,5 @@ tqdm
 h5py
 kornia
 pypng
+GPUtil
+opencv-python
