@@ -2,8 +2,9 @@
   user: "mbaradad"
   tasks:
     - name: "execute my script"
-      script: dead_leaves.sh
+      script: matlab_datasets.sh
 
 # f is the number of forks! important to put as max as needed for true parallelism so that the master does not wait for
 # completion of some of the slaves.
-#| => ansible-playbook -i visioncpu ansible_run_distributed_python_script/dead_leaves.yml -f 50
+#| => # kill each hour, some matlab instances seem to hang
+      # watch -n 3600 "ansible-playbook -i visioncpu ansible_run_distributed_matlab_script/matlab_datasets.yml -f 50"

@@ -354,7 +354,10 @@ def visdom_line(Ys, X=None, names=None, env=None, win=None, title=None, vis=None
     elif not X is None:
       assert len(X.shape) == 1, "X should only have one dimension, as it is common for all Ys!"
       assert X.shape[0] == Ys.shape[0], "Data and X should have the same number of points"
-  vis.line(np.array(Ys), X=X, env=env, win=win, opts=opt)
+  Ys = np.array(Ys)
+  if X is None:
+    X = np.arange(Ys.shape[0])
+  vis.line(Ys, X=X, env=env, win=win, opts=opt)
 
 def save_visdom_plot(win, save_path):
   return
@@ -451,7 +454,7 @@ def get_image_size_fast_png(file_path):
 
   return width, height
 
-def tile_images(imgs, tiles, tile_size):
+def tile_images(imgs, tiles, tile_size, border_pixels=0, border_color=0):
   final_img = np.zeros((3, tiles[0]*tile_size[0], tiles[1]*tile_size[1]))
   n_imgs = len(imgs)
   k = 0
@@ -785,14 +788,16 @@ def list_of_lists_into_single_list(list_of_lists):
   return flat_list
 
 
-def find_all_files_recursively(folder, prepend_path=False, extension=None, progress=False):
+def find_all_files_recursively(folder, prepend_path=False, extension=None, progress=False, substring=None):
   if extension is None:
     glob_expresion = '*'
   else:
     glob_expresion = '*' + extension
   all_files = []
   for f in Path(folder).rglob(glob_expresion):
-    all_files.append((str(f) if prepend_path else f.name))
+    file_name = str(f) if prepend_path else f.name
+    if substring is None or substring in file_name:
+      all_files.append(file_name)
   return all_files
 
 def interlace(list_of_lists):

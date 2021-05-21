@@ -2,8 +2,8 @@
   user: "mbaradad"
   tasks:
     - name: "execute my script"
-      script: dead_leaves.sh
+      script: one_over_f.sh
 
 # f is the number of forks! important to put as max as needed for true parallelism so that the master does not wait for
 # completion of some of the slaves.
-#| => ansible-playbook -i visioncpu ansible_run_distributed_python_script/dead_leaves.yml -f 50
+#| => ansible-playbook -i visioncpu ansible_run_distributed_python_script/one_over_f.yml -f 50

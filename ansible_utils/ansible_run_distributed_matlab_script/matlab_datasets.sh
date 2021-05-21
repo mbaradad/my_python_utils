@@ -13,8 +13,8 @@ else
 fi
 
 source activate default_env37
-source $HOME/.bash_commands/all
-cd $HOME/no_training_cnn/contrastive_image_models;
-export PYTHONPATH=..
-# pkill python
-python image_generation/dead_leaves.py
+source $HOME/.bashrc
+cd $HOME/no_training_cnn/contrastive_image_models/image_generation/antonio_models/manel_image_models
+
+matlab -nodisplay -r "generate_datasets_big;exit" &
+wait
