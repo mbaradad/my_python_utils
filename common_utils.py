@@ -1587,7 +1587,7 @@ def imshow_matplotlib(im, path):
   imwrite(path,np.transpose(im, (1, 2, 0)))
 
 import matplotlib.pyplot as pyplt
-def histogram_image(array, nbins=20, legend=None):
+def all_labels(array, nbins=20, legend=None):
   if type(array) == list:
     array = np.asarray(array)
   else:
