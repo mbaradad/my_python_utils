@@ -454,18 +454,22 @@ def get_image_size_fast_png(file_path):
 
   return width, height
 
-def tile_images(imgs, tiles, tile_size, border_pixels=0, border_color=0):
-  final_img = np.zeros((3, tiles[0]*tile_size[0], tiles[1]*tile_size[1]))
+def tile_images(imgs, tiles, tile_size, border_pixels=0, border_color=(0,0,0)):
+  tile_size_x, tile_size_y = tile_size
+  n_tiles_x, n_tiles_y = tiles
+  final_img = np.zeros((3, tile_size_y * n_tiles_y + border_pixels * (n_tiles_y - 1), tile_size_x * n_tiles_x + border_pixels * (n_tiles_x - 1)))
+  final_img += np.array(border_color)[:, None, None]
   n_imgs = len(imgs)
   k = 0
-  for i in range(tiles[0]):
-    for j in range(tiles[1]):
+  for i in range(n_tiles_y):
+    for j in range(n_tiles_x):
       tile = myimresize(imgs[k], tile_size)
       if len(tile.shape) == 2:
         tile = tile[None,:,:]
       if tile.shape[0] == 1:
         tile = np.concatenate((tile, tile, tile))
-      final_img[:, i*tile_size[0]:(i+1)*tile_size[0],j*tile_size[1]:(j+1)*tile_size[1]] = tile
+      final_img[:, i*(tile_size_y + border_pixels):i*(tile_size_y + border_pixels) + tile_size_y,
+                   j*(tile_size_x + border_pixels):j*(tile_size_x + border_pixels) + tile_size_x] = tile
       k = k + 1
       if k >= n_imgs:
         break
