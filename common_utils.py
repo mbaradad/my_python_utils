@@ -2,10 +2,10 @@
 from __future__ import division
 # we need to import this before torch:
 # https://github.com/pytorch/pytorch/issues/19739
-
 try:
   import open3d as o3d
 except:
+  print("Failed to import open3d!")
   pass
 import torch
 from pathlib import Path
@@ -535,7 +535,7 @@ def add_line(im, origin_x_y, end_x_y, color=(255, 0, 0)):
   return np.array(im).transpose()
 
 def add_bbox(im, x_0_y_0_s, x_1_y_1_s, color=(255, 0, 0), line_width=1):
-  im_with_box = np.array(im).transpose((1, 2, 0))
+  im_with_box = np.ascontiguousarray(np.array(im).transpose((1, 2, 0)))
   if not type(x_0_y_0_s) is list:
     x_0_y_0_s = [x_0_y_0_s]
   if not type(x_1_y_1_s) is list:
@@ -570,7 +570,7 @@ def add_squared_bbox(im, centers_x_y, box_width=5, color=(255, 0, 0), line_width
     return np.array(im_with_box.get()).transpose((2, 0, 1))
 
 def add_text(im, lines, starts_x_y, color=(255, 0, 0), font_scale=1, line_width=2):
-  im_with_text = np.array(im).transpose((1, 2, 0))
+  im_with_text = np.ascontiguousarray(np.array(im).transpose((1, 2, 0)))
   if not type(starts_x_y) is list:
     starts_x_y = [starts_x_y]
   if not type(lines) is list:
@@ -1974,6 +1974,8 @@ def send_graph_to_device(g, device):
   return g
 
 def tonumpy(tensor):
+  if type(tensor) is Image:
+    return np.array(tensor).transpose((2,0,1))
   if type(tensor) is list:
     return np.array(tensor)
   if type(tensor) is np.ndarray:
@@ -2612,7 +2614,7 @@ class FixSampleDataset:
     self.replication_factor = replication_factor
     if samples_to_fix == -1:
       # just get a random one
-      self.fixed_samples = [self.dataset.__getitem__(np.randint(0, len(self.dataset)))]
+      self.fixed_samples = [self.dataset.__getitem__(np.random.randint(0, len(self.dataset)))]
     else:
       if not type(samples_to_fix) is list:
         samples_to_fix = list(samples_to_fix)
@@ -2634,6 +2636,23 @@ class FixSampleDataset:
     item = np.random.randint(0, len(self.fixed_samples))
     return self.fixed_samples[item]
 
+
+def pad_vector(vec, pad, axis=0, value=0):
+  """
+  args:
+      vec - vector to pad
+      pad - the size to pad to
+      axis - dimension to pad
+
+  return:
+      a new tensor padded to 'pad' in dimension 'axis'
+  """
+  assert type(vec) is np.ndarray, "pad_vector only implemented for numpy array and is {}".format(type(vec))
+
+  pad_size = list(vec.shape)
+  pad_size[axis] = pad - vec.shape[axis]
+  return np.concatenate([vec, value*np.ones(pad_size, dtype=vec.dtype)], axis=axis)
+
 def get_gpu_stats(counts=10, desired_time_diffs_ms=0):
   gpus = [dict(gpu=0, mem=0) for _ in GPUtil.getGPUs()]
   for _ in range(counts):
@@ -2654,17 +2673,6 @@ def get_gpu_stats(counts=10, desired_time_diffs_ms=0):
 
   return gpus
 
-'''
-def make_scratch_folder(directory):
-  # creates a folder in scratch disk and links it to directory
-  scratch = '/data/vision/torralba/scratch/mbaradad/scratch_folders'
-  desired_directory_absolute_path = os.path.abspath(directory)
-  scratch_rel_directory = desired_directory_absolute_path.replace('/','_')
-  scratch_abs_directory = '{}/{}'.format(scratch, scratch_rel_directory)
-  os.makedirs(scratch_abs_directory, exist_ok=True)
-
-  os.symlink(scratch_abs_directory, desired_directory_absolute_path)
-'''
 
 if __name__ == '__main__':
   gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)

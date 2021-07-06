@@ -240,6 +240,8 @@ def myimresize(img, target_shape, interpolation_mode=cv2.INTER_NEAREST):
   assert interpolation_mode in [cv2.INTER_NEAREST, cv2.INTER_AREA]
   max = img.max(); min = img.min()
   uint_mode = img.dtype == 'uint8'
+
+  assert len(target_shape) == 2, "Passed shape {}. Should only be (height, width)".format(target_shape)
   if max > min and not uint_mode:
     img = (img - min)/(max - min)
   if len(img.shape) == 3 and img.shape[0] in [1,3]:

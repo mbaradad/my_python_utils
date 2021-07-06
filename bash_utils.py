@@ -3,14 +3,16 @@ from p_tqdm import p_map
 import os
 import glob
 
+
+def single_delete(folder):
+  try:
+    rmtree(folder)
+  except:
+    pass
+
 # useful to delete folders with lots of subfolders/files
 def parallel_delete(foldername, max_level_to_parallelize, workers=50):
   # finds folders recursively up to n levels
-  def single_delete(folder):
-    try:
-      rmtree(folder)
-    except:
-      pass
 
   for actual_level in range(max_level_to_parallelize, -1, -1):
     print('Listing at level: {}'.format(actual_level))
