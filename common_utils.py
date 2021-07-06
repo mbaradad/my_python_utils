@@ -96,6 +96,11 @@ def select_gpus(gpus_arg):
 def gettimedatestring():
   return datetime.datetime.now().strftime("%m-%d-%H:%M")
 
+def get_time_microseconds():
+  from datetime import datetime
+  dt = datetime.now()
+  return dt.microsecond
+
 
 class ThreadedMultiqueueSafer():
   def __init__(self, safe_func, use_threading=True, queue_size=20, n_workers=20):
@@ -232,6 +237,15 @@ def cv2_imread(file, return_BGR=False):
   if return_BGR:
     return im
   return im[::-1, :, :]
+
+def im_to_bw(image):
+  assert len(image.shape) == 3
+  image = (image - image.min()) / (image.max() - image.min())
+  image = np.array(image * 255, dtype='uint8')
+  gray = cv2.cvtColor(image.transpose((1,2,0)), cv2.COLOR_BGR2GRAY)
+
+  return gray
+
 
 def load_image_tile(filename, top, bottom, left, right, dtype='uint8'):
   #img = pyvips.Image.new_from_file(filename, access='sequential')
@@ -463,7 +477,7 @@ def tile_images(imgs, tiles, tile_size, border_pixels=0, border_color=(0,0,0)):
   k = 0
   for i in range(n_tiles_y):
     for j in range(n_tiles_x):
-      tile = myimresize(imgs[k], tile_size)
+      tile = myimresize(tonumpy(imgs[k]), tile_size)
       if len(tile.shape) == 2:
         tile = tile[None,:,:]
       if tile.shape[0] == 1:
@@ -1562,7 +1576,7 @@ def show_pointcloud(original_coords, original_colors=None, title='none', win=Non
                             'symbol': 'dot',
                             'color': visdom_colors[1],
                             'line': {
-                                'color': '#000000',
+                                'color': '#0z00000',
                                 'width': 0,
                             }
                           }
