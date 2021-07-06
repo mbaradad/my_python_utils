@@ -15,5 +15,6 @@ fi
 source activate default_env37
 source $HOME/.bash_commands/all
 cd $HOME/no_training_cnn/contrastive_image_models;
-export PYTHONPATH=.
+export PYTHONPATH=..
+# pkill python
 python image_generation/dead_leaves.py

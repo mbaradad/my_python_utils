@@ -24,3 +24,5 @@ open3d==0.8.0
 seaborn
 kornia
 pypng
+GPUtil
+opencv-python

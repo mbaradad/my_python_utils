@@ -60,6 +60,10 @@ from my_python_utils.logging_utils import *
 
 from sklearn.manifold import TSNE
 
+import GPUtil
+
+import tempfile
+
 from my_python_utils.geom_utils import *
 
 global VISDOM_BIGGEST_DIM
@@ -70,6 +74,7 @@ def get_hostname():
 
 def select_gpus(gpus_arg):
   #so that default gpu is one of the selected, instead of 0
+  gpus_arg = str(gpus_arg)
   if len(gpus_arg) > 0:
     os.environ['CUDA_VISIBLE_DEVICES'] = gpus_arg
     gpus = list(range(len(gpus_arg.split(','))))
@@ -77,6 +82,15 @@ def select_gpus(gpus_arg):
     os.environ['CUDA_VISIBLE_DEVICES'] = ''
     gpus = []
   print('CUDA_VISIBLE_DEVICES={}'.format(os.environ['CUDA_VISIBLE_DEVICES']))
+
+  flag = 0
+  for i in range(len(gpus)):
+    for i1 in range(len(gpus)):
+      if i != i1:
+        if gpus[i] == gpus[i1]:
+          flag = 1
+  assert not flag, "Gpus repeated: {}".format(gpus)
+
   return gpus
 
 def gettimedatestring():
@@ -254,6 +268,8 @@ def merge_side_by_side(im1, im2):
   im_canvas[:,:,im1.shape[-1]:] = im2
   return im_canvas
 
+def is_pycharm_run():
+  return'PYCHARM_RUN' in os.environ.keys()
 
 def visdom_histogram(array, win=None, title=None, env=None, vis=None):
   if env is None:
@@ -309,7 +325,8 @@ def visdom_boxplot(array, env=None, win='test', title=None, vis=None):
   opt = dict()
   vis.boxplot(array, env=env, win=win, opts=opt)
 
-def visdom_line(arrays, X=None, names=None, env=None, win=None, title=None, vis=None):
+# If multiple Ys lines are provided, first dimension is # of lines, second is # of data points
+def visdom_line(Ys, X=None, names=None, env=None, win=None, title=None, vis=None):
   if env is None:
     env = PYCHARM_VISDOM
   if vis is None:
@@ -323,13 +340,24 @@ def visdom_line(arrays, X=None, names=None, env=None, win=None, title=None, vis=
     opt['legend'] = names
   if not title is None:
     opt['title'] = title
-  if type(arrays) is list:
-    arrays = np.array(arrays)
-    arrays = arrays.transpose()
+  if type(Ys) is list:
+    Ys = np.array(Ys)
+    Ys = Ys.transpose()
   else:
     # inner dimension is the data, but visdom expects the opposite
-    arrays = arrays.transpose()
-  vis.line(np.array(arrays), X=X, env=env, win=win, opts=opt)
+    Ys = Ys.transpose()
+  if type(X) is list:
+    Xs = np.array(X)
+  if len(Ys.shape) == 2:
+    if Ys.shape[1] == 1:
+      Ys = Ys[:,0]
+    elif not X is None:
+      assert len(X.shape) == 1, "X should only have one dimension, as it is common for all Ys!"
+      assert X.shape[0] == Ys.shape[0], "Data and X should have the same number of points"
+  Ys = np.array(Ys)
+  if X is None:
+    X = np.arange(Ys.shape[0])
+  vis.line(Ys, X=X, env=env, win=win, opts=opt)
 
 def save_visdom_plot(win, save_path):
   return
@@ -426,18 +454,22 @@ def get_image_size_fast_png(file_path):
 
   return width, height
 
-def tile_images(imgs, tiles, tile_size):
-  final_img = np.zeros((3, tiles[0]*tile_size[0], tiles[1]*tile_size[1]))
+def tile_images(imgs, tiles, tile_size, border_pixels=0, border_color=(0,0,0)):
+  tile_size_x, tile_size_y = tile_size
+  n_tiles_x, n_tiles_y = tiles
+  final_img = np.zeros((3, tile_size_y * n_tiles_y + border_pixels * (n_tiles_y - 1), tile_size_x * n_tiles_x + border_pixels * (n_tiles_x - 1)))
+  final_img += np.array(border_color)[:, None, None]
   n_imgs = len(imgs)
   k = 0
-  for i in range(tiles[0]):
-    for j in range(tiles[1]):
+  for i in range(n_tiles_y):
+    for j in range(n_tiles_x):
       tile = myimresize(imgs[k], tile_size)
       if len(tile.shape) == 2:
         tile = tile[None,:,:]
       if tile.shape[0] == 1:
         tile = np.concatenate((tile, tile, tile))
-      final_img[:, i*tile_size[0]:(i+1)*tile_size[0],j*tile_size[1]:(j+1)*tile_size[1]] = tile
+      final_img[:, i*(tile_size_y + border_pixels):i*(tile_size_y + border_pixels) + tile_size_y,
+                   j*(tile_size_x + border_pixels):j*(tile_size_x + border_pixels) + tile_size_x] = tile
       k = k + 1
       if k >= n_imgs:
         break
@@ -696,7 +728,7 @@ def preprocess_im_to_plot(im, normalize_image=True):
 
 def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True,
            max_batch_display=10, window=None, env=None, fps=10, vis=None,
-           add_ranges=False, return_image=False, add_axis=False):
+           add_ranges=False, return_image=False, add_axis=False, gif=False):
   if env is None:
     env = PYCHARM_VISDOM
   if window is None:
@@ -709,7 +741,6 @@ def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True,
   if not biggest_dim is None and len(im.shape) == 3:
     im = scale_image_biggest_dim(im, biggest_dim)
 
-
   if add_axis:
     if len(im.shape) == 3:
       im = add_axis_to_image(im)
@@ -721,7 +752,12 @@ def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True,
     if window is None:
       window = title
     if len(im.shape) == 4:
-      return vidshow_vis(im, title=title, window=window, env=env, vis=vis, biggest_dim=biggest_dim, fps=fps)
+      if not gif:
+        return vidshow_vis(im, title=title, window=window, env=env, vis=vis, biggest_dim=biggest_dim, fps=fps)
+      else:
+        temp_name = '{}/{}.gif'.format(tempfile._get_default_tempdir(), next(tempfile._get_candidate_names()))
+        make_gif(im, path=temp_name, fps=fps, biggest_dim=biggest_dim)
+        return vidshow_gif_path(temp_name, title=title, win=window, env=env, vis=vis)
     else:
       imshow_vis(im, title=title + postfix, win=window, env=env, vis=vis)
   else:
@@ -756,14 +792,16 @@ def list_of_lists_into_single_list(list_of_lists):
   return flat_list
 
 
-def find_all_files_recursively(folder, prepend_path=False, extension=None, progress=False):
+def find_all_files_recursively(folder, prepend_path=False, extension=None, progress=False, substring=None):
   if extension is None:
     glob_expresion = '*'
   else:
     glob_expresion = '*' + extension
   all_files = []
   for f in Path(folder).rglob(glob_expresion):
-    all_files.append((str(f) if prepend_path else f.name))
+    file_name = str(f) if prepend_path else f.name
+    if substring is None or substring in file_name:
+      all_files.append(file_name)
   return all_files
 
 def interlace(list_of_lists):
@@ -1553,7 +1591,7 @@ def imshow_matplotlib(im, path):
   imwrite(path,np.transpose(im, (1, 2, 0)))
 
 import matplotlib.pyplot as pyplt
-def histogram_image(array, nbins=20, legend=None):
+def all_labels(array, nbins=20, legend=None):
   if type(array) == list:
     array = np.asarray(array)
   else:
@@ -2584,6 +2622,7 @@ class FixSampleDataset:
     item = np.random.randint(0, len(self.fixed_samples))
     return self.fixed_samples[item]
 
+
 def pad_vector(vec, pad, axis=0, value=0):
   """
   args:
@@ -2600,41 +2639,28 @@ def pad_vector(vec, pad, axis=0, value=0):
   pad_size[axis] = pad - vec.shape[axis]
   return np.concatenate([vec, value*np.ones(pad_size, dtype=vec.dtype)], axis=axis)
 
+def get_gpu_stats(counts=10, desired_time_diffs_ms=0):
+  gpus = [dict(gpu=0, mem=0) for _ in GPUtil.getGPUs()]
+  for _ in range(counts):
+    t0 = time.time()
+    for gpu_i, gpu in enumerate(GPUtil.getGPUs()):
+      gpus[gpu_i]['gpu_usage'] += gpu.load
+      gpus[gpu_i]['mem_usage'] += gpu.memoryUsed / gpu.memoryTotal
+      time_diff_s = time.time() - t0
+      if time_diff_s < desired_time_diffs_ms / 1000.0:
+        time.sleep((desired_time_diffs_ms - time_diff_s) / 1000.0)
+      t0 = time.time()
+
+
+  for gpu_i, gpu in enumerate(GPUtil.getGPUs()):
+    gpus[gpu_i]['gpu_usage'] /= counts
+    gpus[gpu_i]['mem_usage'] /= counts
+    gpus[gpu_i]['mem_total'] = gpu.memoryTotal
+
+  return gpus
 
 
 if __name__ == '__main__':
-  #keys = list(os.environ.keys())
-  #keys.sort()
-  #for k in keys:
-  #  print(k + ': ' + os.environ[k])
-
-  vid = np.zeros((10,3,100,100))
-  filename = imshow(vid, title='test_1', env='test_video')
-  vidshow_file_vis(filename, title='asdf', env='test_video')
-  exit(0)
-  stats = load_from_pickle('/data/vision/torralba/globalstructure/datasets/mannequin/colmap_reconstructions/pose_stats.pckl')
-  stats = np.array(list(stats.values()))
-  visdom_histogram(stats[:,0])
-  files = listdir('/data/vision/torralba/speechvision/gazegraph/megadepth/10_Things_I_Hate_About_You/', prepend_folder=True)
-  random.shuffle(files)
-  for f in files:
-    fs = listdir(f, True)
-    if len(fs) > 0:
-      res = np.load(fs[0])
-      imshow(res['image'], title='image')
-      show_pointcloud(res['world_coords'], res['image'], title='plc')
-  elems_to_plot = listdir('plcs_to_plot', True)
-  for elem in elems_to_plot:
-    elem = np.load(elem)
-    create_video_from_pointcloud(elem['coords_gt'], elem['images'])
-    create_video_from_pointcloud(elem['coords_predicted'], elem['images'])
-
-  all_items = read_text_file_lines('/data/vision/torralba/scratch/mbaradad/mannequin/postprocess_reconstructions/max_width_1080/all_flows_to_compute_fwd')
-  for item in all_items:
-    im_1 = cv2_imread(item.split(' ')[0])
-    im_2 = cv2_imread(item.split(' ')[1])
-    flow = read_flow(item.split(' ')[2])
-    im_flow = flow_to_image(flow)
-    imshow(im_1, title='im1')
-    imshow(im_2, title='im2')
-    imshow(im_flow, title='flow')
+  gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)
+  print(gpus)
+  a = 1
