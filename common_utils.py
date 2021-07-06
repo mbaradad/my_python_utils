@@ -2,7 +2,11 @@
 from __future__ import division
 # we need to import this before torch:
 # https://github.com/pytorch/pytorch/issues/19739
-import open3d as o3d
+try:
+  import open3d as o3d
+except:
+  print("Failed to import open3d!")
+  pass
 import torch
 from pathlib import Path
 
@@ -2558,7 +2562,7 @@ class FixSampleDataset:
     self.replication_factor = replication_factor
     if samples_to_fix == -1:
       # just get a random one
-      self.fixed_samples = [self.dataset.__getitem__(np.randint(0, len(self.dataset)))]
+      self.fixed_samples = [self.dataset.__getitem__(np.random.randint(0, len(self.dataset)))]
     else:
       if not type(samples_to_fix) is list:
         samples_to_fix = list(samples_to_fix)
@@ -2590,7 +2594,7 @@ def pad_vector(vec, pad, axis=0, value=0):
   return:
       a new tensor padded to 'pad' in dimension 'axis'
   """
-  assert type(vec) is np.ndarray, "pad_vector only implemented for numpy array"
+  assert type(vec) is np.ndarray, "pad_vector only implemented for numpy array and is {}".format(type(vec))
 
   pad_size = list(vec.shape)
   pad_size[axis] = pad - vec.shape[axis]
