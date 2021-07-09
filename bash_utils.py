@@ -24,4 +24,4 @@ def parallel_delete(foldername, max_level_to_parallelize, workers=50):
     print('End parallel delete at level: {}'.format(actual_level))
 
 if __name__ == "__main__":
-  parallel_delete('/data/vision/torralba/movies_sfm/home/no_training_cnn/cache/precomputed_features', max_level_to_parallelize=2)
+  parallel_delete('/data/vision/torralba/scratch/mbaradad/big_brother', max_level_to_parallelize=4)

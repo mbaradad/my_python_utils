@@ -600,7 +600,7 @@ def add_circle(im, centers_x_y, radius=5, color=(255, 0, 0)):
       actual_color = tuple(color[i])
     else:
       actual_color = color
-    im_with_circle = cv2.circle(im_with_circle, tuple(np.array(center_x_y, dtype='int')), radius, actual_color, -1)
+    im_with_circle = cv2.circle(cv2.UMat(im_with_circle), tuple(np.array(center_x_y, dtype='int')), radius, actual_color, -1).get()
   if type(im_with_circle) is np.ndarray:
     return im_with_circle.transpose((2, 0, 1))
   else:
@@ -622,7 +622,7 @@ def add_arrow(im, origins_x_y, ends_x_y, colors=(255, 0, 0), width=5):
       color = tuple(colors[i])
     else:
       color = colors
-    im_with_arrow = cv2.arrowedLine(im_with_arrow, tuple(np.array(origin_x_y, dtype='int')), tuple(np.array(end_x_y, dtype='int')), color, width)
+    im_with_arrow = cv2.arrowedLine(cv2.UMat(im_with_arrow), tuple(np.array(origin_x_y, dtype='int')), tuple(np.array(end_x_y, dtype='int')), color, width).get()
 
   if type(im_with_arrow) is np.ndarray:
     return im_with_arrow.transpose((2, 0, 1))
