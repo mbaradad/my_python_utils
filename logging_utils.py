@@ -82,7 +82,14 @@ class AverageMeter(object):
         self.sum = [0]*i
         self.count = [0]*i
 
-    def update(self, val, n=1, losses_to_update=None):
+    def update_loss_dict(self, losses_dict, n=1):
+        assert len(losses_dict) == len(self.names)
+        loss_vals = [0 for _ in range(len(self.names))]
+        for k, v in losses_dict.items():
+            loss_vals[self.names.index(k)] = v
+        self.update(loss_vals, n)
+
+    def update(self, val, n=1):
         if not isinstance(val, list):
             val = [val]
         if not isinstance(n, list):
@@ -112,6 +119,9 @@ class AverageMeter(object):
     def get_avg_strings(self):
         avgs = ['{:.{}f}'.format(a, self.precision) for a in self.avg]
         return avgs
+
+    def get_last_val_as_dict(self):
+        return dict([(self.names[k], self.val[k]) for k in range(len(self.names))])
 
     def get_val_and_avg_strings(self, names=None, append_names=False):
         val_strings = self.get_val_strings()

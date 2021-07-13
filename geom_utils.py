@@ -32,14 +32,64 @@ def transform_unit_A_unit_B(a, b):
 
   return R
 
+
+def rigid_transform_3D_batched(A, B, mask):
+  # returns the rigid transform (R, t) that such that R @ A + t gives minimal distance to B, assuming one to one mapping from A to B.
+  # A and B are torch arrays of size batch_size x 3 x N, mask indicates which of the N points should be used for A and B
+  assert A.shape == B.shape
+  assert len(A.shape) == 3, "Should be BX x 3 x N"
+  assert A.shape[-2] == 3, "Should be BX x 3 x N"
+  assert len(mask.shape) == 2
+  assert mask.shape[0] == A.shape[0] and mask.shape[1] == A.shape[2]
+  mask = mask[:,None,:]
+
+  assert not A.requires_grad and not B.requires_grad, "This was not implemented to be backpropagated, though may not require many changes"
+
+  N = A.shape[-1]
+
+  if mask is None:
+    mask_sum = torch.ones((A.shape[0], A.shape[1])).to(A.device)
+  else:
+    mask_sum = mask.sum(-1)
+
+  # find mean column wise
+  centroid_A = (A * mask).sum(-1)/ mask_sum
+  centroid_B = (B * mask).sum(-1)/ mask_sum
+
+  # subtract mean
+  Am = A - torch.tile(centroid_A[:,:,None], (1, 1, N))
+  Bm = B - torch.tile(centroid_B[:,:,None], (1, 1, N))
+
+  # put zeros on masked regions so that it does not penalize
+  Am = Am * mask
+  Bm = Bm * mask
+
+  # dot is matrix multiplication for array
+  H = Am @ Bm.transpose(1,2)
+
+  # find rotation
+  U, S, Vt = torch.linalg.svd(H)
+  R = Vt.transpose(1,2) @ U.transpose(1,2)
+
+  # special reflection case
+  #print("det(R) < R, reflection detected!, correcting for it ...\n");
+  Vt_inverted = Vt.clone()
+  Vt_inverted[:, 2, :] *= -1
+  R_inverted = Vt_inverted.transpose(1,2) @ U.transpose(1,2)
+
+  negative_det = torch.linalg.det(R) < 0
+  R = R * (1 - negative_det[:,None,None] * 1.0) + R_inverted * negative_det[:,None,None]
+
+  t = (-R @ centroid_A[:,:,None])[:,:,0] + centroid_B
+
+  return R.float(), t.float()
+
 def rigid_transform_3D_np(A, B):
   assert len(A) == len(B)
   if type(A) is np.ndarray:
     A = np.mat(A)
   if type(B) is np.ndarray:
     B = np.mat(B)
-  A = A.T
-  B = B.T
 
   num_rows, num_cols = A.shape;
 
@@ -273,3 +323,40 @@ def rotation_matrix_two_vectors(a, b):
   k = np.matrix(vXStr)
   r = I + k + np.matmul(k,k) * ((1 -c)/(s**2))
   return np.array(r)
+
+
+
+if __name__ == '__main__':
+  N = 30
+  A = np.random.normal(0,1,(3, N))
+  R = zrotation_deg(50) @ yrotation_deg(50) @ xrotation_deg(60)
+  t = np.random.normal(0,1,3)
+  B = R @ A + t[:,None]
+
+  '''
+  show_pointcloud([A.transpose(),B.transpose()],[np.array([(255,0,0)]*N),np.array([(0,255,0)]*N)], title='before_aligning')
+
+  R_np, t_np = rigid_transform_3D_np(A, B)
+  A_after_np_aligning = (R_np @ A + t_np)
+  show_pointcloud([A_after_np_aligning.transpose(),B.transpose()],[np.array([(255,0,0)]*N),np.array([(0,255,0)]*N)], title='after_np_aligning')
+
+  '''
+
+  R_torch, t_torch = rigid_transform_3D_batched(totorch(A)[None], totorch(B)[None], mask=np.ones((1, N)))
+  A_after_torch_aligning = (tonumpy(R_torch) @ A + tonumpy(t_torch)[:,:,None])[0]
+  show_pointcloud([A_after_torch_aligning.transpose(),B.transpose()],[np.array([(255,0,0)]*N),np.array([(0,255,0)]*N)], title='after_torch_aligning')
+
+
+  BS = 10
+  N_valid = N // 2
+  multi_A = torch.tile(totorch(A)[None], (BS,1,1))
+  multi_B = torch.tile(totorch(B)[None], (BS,1,1))
+  padded_mask = np.ones((BS, N), dtype='uint8')
+  padded_mask[:,N_valid:] = 0
+  R_torch, t_torch = rigid_transform_3D_batched(multi_A, multi_B, mask=padded_mask)
+
+  multi_A_after_torch_aligning = (R_torch @ multi_A + t_torch[:,:,None])
+  for k in range(0, BS, BS//2):
+    show_pointcloud([multi_A_after_torch_aligning[k,:,:N_valid].transpose(0,1),multi_B[k,:,:N_valid].transpose(0,1)],
+                    [np.array([(255,0,0)] * N_valid),np.array([(0,255,0)] * N_valid)],
+                    title='after_multi_torch_aligning_{}'.format(k))
