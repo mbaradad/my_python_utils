@@ -2674,6 +2674,9 @@ def get_gpu_stats(counts=10, desired_time_diffs_ms=0):
   return gpus
 
 
+def get_randm_number_from_timestamp():
+  return time.time_ns() % 2 ** 32
+
 if __name__ == '__main__':
   gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)
   print(gpus)
