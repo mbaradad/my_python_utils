@@ -2677,7 +2677,17 @@ def get_gpu_stats(counts=10, desired_time_diffs_ms=0):
 def get_randm_number_from_timestamp():
   return time.time_ns() % 2 ** 32
 
+
+def checkpoint_can_be_loaded(checkpoint):
+  try:
+    a = torch.load(checkpoint, map_location=torch.device('cpu'))
+  except Exception as e:
+    print(e)
+    return False
+  return True
+
 if __name__ == '__main__':
   gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)
   print(gpus)
   a = 1
+
