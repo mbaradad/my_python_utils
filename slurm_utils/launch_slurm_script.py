@@ -4,6 +4,8 @@ import subprocess
 
 import os
 
+from datetime import datetime
+
 def str2bool(v):
   assert type(v) is str
   if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -48,8 +50,16 @@ if __name__ == '__main__':
     print("Running slurm script {} for time: {}".format(args.script, n + 1))
     t_0 = time.time()
 
+    now = datetime.now()  # current date and time
+
     if args.init_slurm_id == -1:
-      output = subprocess.run("sbatch --qos=sched_level_2 " + args.script, shell=True, capture_output=True)
+      slurm_command = "sbatch " + args.script + " --qos=sched_level_2"
+      print(slurm_command)
+      exit(0)
+
+      output = subprocess.run(slurm_command, shell=True, capture_output=True)
+      date_time = now.strftime("%m/%d/%Y, %H:%M:%S")
+      print("Slurm job launched at:", date_time)
       slurm_id = int(str(output.stdout).split(' job ')[-1].split('\\')[0])
 
     print("Currently running slurm job with id: {}".format(slurm_id))
