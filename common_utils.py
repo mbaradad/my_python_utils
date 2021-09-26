@@ -172,6 +172,16 @@ def write_text_file_lines(lines, file):
     for item in lines:
       file_handler.write("%s\n" % item)
 
+def write_text_file(text, filename):
+  with open(filename, "w") as file:
+    file.write(text)
+
+def read_text_file(filename):
+  text_file = open(filename, "r")
+  data = text_file.read()
+  text_file.close()
+  return data
+
 def tensor2array(tensor, max_value=255, colormap='rainbow'):
     if tensor.is_cuda:
         tensor = tensor.cpu()
