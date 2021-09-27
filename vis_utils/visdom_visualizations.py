@@ -30,7 +30,7 @@ if not 'NO_VISDOM' in os.environ.keys():
   with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     import visdom
-    global_vis = instantiante_visdom(12890, server='http://visiongpu09')
+    global_vis = instantiante_visdom(12890, server='http://vision09')
 
 def list_of_lists_into_single_list(list_of_lists):
   flat_list = [item for sublist in list_of_lists for item in sublist]
