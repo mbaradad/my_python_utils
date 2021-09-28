@@ -237,7 +237,6 @@ def scale_image_biggest_dim(im, biggest_dim):
   return im
 
 def myimresize(img, target_shape, interpolation_mode=cv2.INTER_NEAREST):
-  assert interpolation_mode in [cv2.INTER_NEAREST, cv2.INTER_AREA]
   max = img.max(); min = img.min()
   uint_mode = img.dtype == 'uint8'
 
