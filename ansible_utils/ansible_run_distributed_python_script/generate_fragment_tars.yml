@@ -2,8 +2,8 @@
   user: "mbaradad"
   tasks:
     - name: "execute my script"
-      script: statistical_python_datasets.sh
+      script: generate_fragment_tars.sh
 
 # f is the number of forks! important to put as max as needed for true parallelism so that the master does not wait for
 # completion of some of the slaves.
-#| => ansible-playbook -i visioncpu ansible_run_distributed_python_script/statistical_python_datasets.yml -f 50
+#| => ansible-playbook -i visioncpu ansible_run_distributed_python_script/generate_fragment_tars.yml -f 50

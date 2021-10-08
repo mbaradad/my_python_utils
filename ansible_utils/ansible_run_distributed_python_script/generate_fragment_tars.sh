@@ -14,6 +14,5 @@ fi
 
 source activate default_env37
 source $HOME/.bash_commands/all
-cd $HOME/no_training_cnn/contrastive_image_models;
-export PYTHONPATH=.
-python image_generation/generate_wmm.py
+cd $HOME/no_training_cnn;
+./scripts/datasets/fragments/tar_images_per_fragment.sh
