@@ -2307,9 +2307,6 @@ def get_jsonparsed_data(url):
     return json.loads(data)
 
 
-url = ("http://maps.googleapis.com/maps/api/geocode/json?"
-       "address=googleplex&sensor=false")
-print(get_jsonparsed_data(url))
 
 def np_to_tensor(np_obj):
   return torch.FloatTensor(np_obj)
