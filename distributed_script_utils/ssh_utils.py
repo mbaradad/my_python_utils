@@ -76,9 +76,8 @@ def run_script_on_machines(get_gpu_stats_script, hosts, parallel=True, print_out
             output = linesout
           return (host, output)
       except Exception as e:
-          if 'Authentication failed' in str(e):
-            print("Authentication failed. Check that the password is correct (user: {}; password: {})".format(username, password))
-            exit(0)
+          #if 'Authentication failed' in str(e):
+          #  print("Authentication failed. Check that the password is correct (user: {}; password: {})".format(username, password))
           return (host, "Could not be reached. Exception: " + str(e))
 
   command_outputs = p_map(lambda x: single_host_task(x,get_gpu_stats_script), hosts, num_cpus=10 if parallel else 1)
@@ -94,9 +93,17 @@ if __name__ == "__main__":
 
   get_running_process_script = config_script + \
     """
-  
     ps aux | grep train | grep _bw | grep mbaradad | grep -v grep
-  
     """
 
-  run_script_on_machines(get_running_process_script, all_hosts, parallel=False)
+  kill_process_script = config_script + \
+    """
+    pkill train
+    pkill python
+    """
+
+  excluded_machines = ['visiongpu09', 'visiongpu37']
+  hosts = [k for k in all_hosts if not k in excluded_machines]
+
+  run_script_on_machines(kill_process_script, all_hosts, parallel=True)
+  run_script_on_machines(get_running_process_script, all_hosts, parallel=True)

@@ -826,6 +826,8 @@ def find_all_files_recursively(folder, prepend_path=False, extension=None, progr
     file_name = str(f) if prepend_path else f.name
     if substring is None or substring in file_name:
       all_files.append(file_name)
+      if progress and len(all_files) % 1000 == 0:
+        print("Found {} files".format(len(all_files)))
   return all_files
 
 def interlace(list_of_lists):
