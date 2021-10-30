@@ -219,8 +219,8 @@ if not is_headed_execution():
     warnings.simplefilter("ignore")
     matplotlib.use('Agg')
 
-def chunk_list(seq, num):
-  avg = len(seq) / float(num)
+def chunk_list(seq, n_chunks):
+  avg = len(seq) / float(n_chunks)
   out = []
   last = 0.0
 
@@ -507,6 +507,19 @@ def str2intlist(v):
  return [int(k) for k in v.split(',')]
 
 
+def get_subdirs(directory, max_depth):
+  if max_depth == 0:
+    if os.path.isdir(directory):
+      return [directory]
+    else:
+      return []
+  else:
+    directories = listdir(directory, prepend_folder=True, type='folder')
+    all_subdirs = []
+    for dir in directories:
+      all_subdirs.extend(get_subdirs(dir, max_depth=max_depth - 1))
+    return all_subdirs
+
 def cross_product_mat_sub_x_torch(v):
   assert len(v.shape) == 3 and v.shape[1:] == (3,1)
   batch_size = v.shape[0]
@@ -534,7 +547,6 @@ def str2bool(v):
     return False
   else:
     raise argparse.ArgumentTypeError('Boolean (yes, true, t, y or 1, lower or upper case) string expected.')
-
 
 def add_line(im, origin_x_y, end_x_y, color=(255, 0, 0)):
   im = Image.fromarray(im.transpose())
@@ -2682,8 +2694,13 @@ def get_gpu_stats(counts=10, desired_time_diffs_ms=0):
 
   return gpus
 
+def get_file_size_bytes(file):
+  file_size = os.stat(file).st_size
+  return file_size
 
-def get_randm_number_from_timestamp():
+
+
+def get_random_number_from_timestamp():
   return time.time_ns() % 2 ** 32
 
 

@@ -83,7 +83,14 @@ def run_script_on_machines(get_gpu_stats_script, hosts, parallel=True, print_out
   command_outputs = p_map(lambda x: single_host_task(x,get_gpu_stats_script), hosts, num_cpus=10 if parallel else 1)
   if print_output:
     for machine, outputs in command_outputs:
-        print('{}: {}'.format(machine, outputs))
+        if len(outputs) == 0:
+          outputs = ['no output']
+        if not type(outputs) is list:
+          outputs = [outputs]
+        for output in outputs:
+          while len(output) > 0 and output[-1] == '\n':
+            output = output[:-1]
+          print(machine + ': ' + output)
   return command_outputs
 
 if __name__ == "__main__":
@@ -93,7 +100,7 @@ if __name__ == "__main__":
 
   get_running_process_script = config_script + \
     """
-    ps aux | grep train | grep _bw | grep mbaradad | grep -v grep
+    ps aux | grep python | grep mbaradad | grep sweep | grep -v grep
     """
 
   kill_process_script = config_script + \
@@ -103,7 +110,9 @@ if __name__ == "__main__":
     """
 
   excluded_machines = ['visiongpu09', 'visiongpu37']
-  hosts = [k for k in all_hosts if not k in excluded_machines]
+  excluded_machines = None
+  if not excluded_machines is None:
+    hosts = [k for k in all_hosts if not k in excluded_machines]
 
-  run_script_on_machines(kill_process_script, all_hosts, parallel=True)
+  #run_script_on_machines(kill_process_script, all_hosts, parallel=True)
   run_script_on_machines(get_running_process_script, all_hosts, parallel=True)

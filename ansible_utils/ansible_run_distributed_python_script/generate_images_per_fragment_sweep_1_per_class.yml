@@ -2,8 +2,8 @@
   user: "mbaradad"
   tasks:
     - name: "execute my script"
-      script: generate_images_per_fragment.sh
+      script: generate_images_per_fragment_sweep_1_per_class.sh
 
 # f is the number of forks! important to put as max as needed for true parallelism so that the master does not wait for
 # completion of some of the slaves.
-#| => ansible-playbook -i visiongpu ansible_run_distributed_python_script/generate_images_per_fragment.yml -f 50
+#| => ansible-playbook -i visiongpu ansible_run_distributed_python_script/generate_images_per_fragment_sweep_1_per_class.yml -f 50
