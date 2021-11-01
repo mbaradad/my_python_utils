@@ -100,7 +100,7 @@ if __name__ == "__main__":
 
   get_running_process_script = config_script + \
     """
-    ps aux | grep python | grep mbaradad | grep sweep | grep -v grep
+    ps aux | grep python | grep mbaradad  | grep -v grep
     """
 
   kill_process_script = config_script + \
@@ -109,7 +109,7 @@ if __name__ == "__main__":
     pkill python
     """
 
-  excluded_machines = ['visiongpu09', 'visiongpu37']
+  # excluded_machines = ['visiongpu09', 'visiongpu37']
   excluded_machines = None
   if not excluded_machines is None:
     hosts = [k for k in all_hosts if not k in excluded_machines]
