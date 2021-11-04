@@ -20,8 +20,8 @@ def parallel_delete(foldername, max_level_to_parallelize, workers=50):
     #level_dirs = filter(os.path.isdir, level_filter)
     print('{} files found at level: {}'.format(len(level_files), actual_level))
     print('Starting parallel delete at level: {}'.format(actual_level))
-    p_map(single_delete, level_files, num_cpus = workers)
+    p_map(single_delete, level_files, num_cpus=workers)
     print('End parallel delete at level: {}'.format(actual_level))
 
 if __name__ == "__main__":
-  parallel_delete('/data/vision/torralba/scratch/mbaradad/big_brother', max_level_to_parallelize=4)
+  parallel_delete('/data/vision/torralba/movies_sfm/home/no_training_cnn/contrastive_image_models/glsl_datasets_generated/fragments_classification_large_scale', max_level_to_parallelize=2)
