@@ -386,7 +386,9 @@ def visdom_line(Ys, X=None, names=None, env=None, win=None, title=None, vis=None
 def save_visdom_plot(win, save_path):
   return
 
-def touch(fname, times=None):
+def touch(fname, times=None, exists_ok=True):
+  if exists_ok and os.path.exists(fname):
+    return
   with open(fname, 'a'):
     os.utime(fname, times)
 

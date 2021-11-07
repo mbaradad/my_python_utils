@@ -103,6 +103,11 @@ if __name__ == "__main__":
     ps aux | grep python | grep mbaradad  | grep -v grep | grep sweep
     """
 
+  get_running_process_script = config_script + \
+    """
+    ps aux | grep playbook
+    """
+
   kill_process_script = config_script + \
     """
     pkill train
