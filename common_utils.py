@@ -503,6 +503,33 @@ def tile_images(imgs, tiles, tile_size, border_pixels=0, border_color=(0,0,0)):
       break
   return final_img
 
+def tile_images_pdf(imgs, pdf_output_file, tiles, tile_size, border_pixels=0):
+  from fpdf import FPDF
+  pdf = FPDF()
+  tile_size_x, tile_size_y = tile_size
+  n_tiles_x, n_tiles_y = tiles
+  n_imgs = len(imgs)
+  k = 0
+  for i in range(n_tiles_y):
+    for j in range(n_tiles_x):
+      tile = myimresize(tonumpy(imgs[k]), tile_size)
+      if len(tile.shape) == 2:
+        tile = tile[None,:,:]
+      if tile.shape[0] == 1:
+        tile = np.concatenate((tile, tile, tile))
+      tmp_filename = '/tmp/{}.jpg'.format(get_random_number_from_timestamp())
+      cv2_imwrite(tile, tmp_filename)
+      x = j * (tile_size_x + border_pixels)
+      y = i * (tile_size_y + border_pixels)
+      pdf.image(tmp_filename, x, y, tile_size_x, tile_size_y)
+      k = k + 1
+      if k >= n_imgs:
+        break
+    if k >= n_imgs:
+      break
+  pdf.output(pdf_output_file, "F")
+
+
 def str2intlist(v):
  if len(v) == 0:
    return []
