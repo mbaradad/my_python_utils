@@ -100,12 +100,7 @@ if __name__ == "__main__":
 
   get_running_process_script = config_script + \
     """
-    ps aux | grep python | grep mbaradad  | grep -v grep | grep sweep
-    """
-
-  get_running_process_script = config_script + \
-    """
-    ps aux | grep playbook
+    ps aux | grep python | grep mbaradad  | grep main_lincls|  grep -v grep 
     """
 
   kill_process_script = config_script + \

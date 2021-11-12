@@ -2,6 +2,8 @@
 from __future__ import division
 # we need to import this before torch:
 # https://github.com/pytorch/pytorch/issues/19739
+from nbconvert.exporters import pdf
+
 try:
   import open3d as o3d
 except:
@@ -503,16 +505,21 @@ def tile_images(imgs, tiles, tile_size, border_pixels=0, border_color=(0,0,0)):
       break
   return final_img
 
-def tile_images_pdf(imgs, pdf_output_file, tiles, tile_size, border_pixels=0):
+def tile_images_pdf(imgs, pdf_output_file, tiles, tile_size, border_pixels=0, return_as_img=True):
   from fpdf import FPDF
-  pdf = FPDF()
   tile_size_x, tile_size_y = tile_size
   n_tiles_x, n_tiles_y = tiles
+
+  w = n_tiles_x * tile_size_x + (n_tiles_x - 1) * border_pixels
+  h = n_tiles_y * tile_size_y + (n_tiles_y - 1) * border_pixels
+  pdf = FPDF('P', 'pt', (w, h))
+  pdf.add_page()
+
   n_imgs = len(imgs)
   k = 0
   for i in range(n_tiles_y):
     for j in range(n_tiles_x):
-      tile = myimresize(tonumpy(imgs[k]), tile_size)
+      tile = myimresize(tonumpy(imgs[k]), tile_size[::-1])
       if len(tile.shape) == 2:
         tile = tile[None,:,:]
       if tile.shape[0] == 1:
@@ -529,6 +536,14 @@ def tile_images_pdf(imgs, pdf_output_file, tiles, tile_size, border_pixels=0):
       break
   pdf.output(pdf_output_file, "F")
 
+  from pdf2image import convert_from_path
+
+  images = convert_from_path(pdf_output_file)
+  # to numpy array
+  image = np.array(images[0]).transpose((2,0,1))
+
+
+  return image
 
 def str2intlist(v):
  if len(v) == 0:
@@ -1886,7 +1901,7 @@ def mkdir(dir):
     os.mkdir(dir)
   return
 
-def delete(file):
+def delete_file(file):
   if os.path.exists(file):
     os.remove(file)
 
