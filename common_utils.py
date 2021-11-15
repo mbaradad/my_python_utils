@@ -1895,6 +1895,8 @@ def make_dir_without_file(file):
   if len(folder) > 0:
     os.makedirs(folder, exist_ok=True)
 
+def get_hash_from_numpy_array(numpy_array):
+  return hash(numpy_array.tobytes())
 
 def mkdir(dir):
   if not os.path.exists(dir):
