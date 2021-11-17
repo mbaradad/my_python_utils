@@ -16,5 +16,4 @@ source activate default_env37
 source $HOME/.bash_commands/all
 cd $HOME/no_training_cnn/contrastive_image_models;
 export PYTHONPATH=..
-# pkill python
-python image_generation/dead_leaves.py
+python image_generation/glsl_programs/generate_images_per_fragment.py --parallel

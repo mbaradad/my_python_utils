@@ -1,0 +1,10 @@
+- hosts: visiongpuall
+  user: "mbaradad"
+  # become: yes
+  tasks:
+    - name: "execute my script"
+      script: copy_imagenet100_to_visiongpu.sh
+
+# f is the number of forks! important to put as max as needed for true parallelism so that the master does not wait for
+# completion of some of the slaves.
+#| => ansible-playbook -i visiongpuall ansible_run_distributed_python_script/copy_imagenet100_to_visiongpu.yml -f 50  --ask-become-pass

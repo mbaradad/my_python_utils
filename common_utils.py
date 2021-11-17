@@ -2,6 +2,8 @@
 from __future__ import division
 # we need to import this before torch:
 # https://github.com/pytorch/pytorch/issues/19739
+from nbconvert.exporters import pdf
+
 try:
   import open3d as o3d
 except:
@@ -172,6 +174,16 @@ def write_text_file_lines(lines, file):
     for item in lines:
       file_handler.write("%s\n" % item)
 
+def write_text_file(text, filename):
+  with open(filename, "w") as file:
+    file.write(text)
+
+def read_text_file(filename):
+  text_file = open(filename, "r")
+  data = text_file.read()
+  text_file.close()
+  return data
+
 def tensor2array(tensor, max_value=255, colormap='rainbow'):
     if tensor.is_cuda:
         tensor = tensor.cpu()
@@ -209,8 +221,8 @@ if not is_headed_execution():
     warnings.simplefilter("ignore")
     matplotlib.use('Agg')
 
-def chunk_list(seq, num):
-  avg = len(seq) / float(num)
+def chunk_list(seq, n_chunks):
+  avg = len(seq) / float(n_chunks)
   out = []
   last = 0.0
 
@@ -376,7 +388,9 @@ def visdom_line(Ys, X=None, names=None, env=None, win=None, title=None, vis=None
 def save_visdom_plot(win, save_path):
   return
 
-def touch(fname, times=None):
+def touch(fname, times=None, exists_ok=True):
+  if exists_ok and os.path.exists(fname):
+    return
   with open(fname, 'a'):
     os.utime(fname, times)
 
@@ -491,11 +505,64 @@ def tile_images(imgs, tiles, tile_size, border_pixels=0, border_color=(0,0,0)):
       break
   return final_img
 
+def tile_images_pdf(imgs, pdf_output_file, tiles, tile_size, border_pixels=0, return_as_img=True):
+  from fpdf import FPDF
+  tile_size_x, tile_size_y = tile_size
+  n_tiles_x, n_tiles_y = tiles
+
+  w = n_tiles_x * tile_size_x + (n_tiles_x - 1) * border_pixels
+  h = n_tiles_y * tile_size_y + (n_tiles_y - 1) * border_pixels
+  pdf = FPDF('P', 'pt', (w, h))
+  pdf.add_page()
+
+  n_imgs = len(imgs)
+  k = 0
+  for i in range(n_tiles_y):
+    for j in range(n_tiles_x):
+      tile = myimresize(tonumpy(imgs[k]), tile_size[::-1])
+      if len(tile.shape) == 2:
+        tile = tile[None,:,:]
+      if tile.shape[0] == 1:
+        tile = np.concatenate((tile, tile, tile))
+      tmp_filename = '/tmp/{}.jpg'.format(get_random_number_from_timestamp())
+      cv2_imwrite(tile, tmp_filename)
+      x = j * (tile_size_x + border_pixels)
+      y = i * (tile_size_y + border_pixels)
+      pdf.image(tmp_filename, x, y, tile_size_x, tile_size_y)
+      k = k + 1
+      if k >= n_imgs:
+        break
+    if k >= n_imgs:
+      break
+  pdf.output(pdf_output_file, "F")
+
+  from pdf2image import convert_from_path
+
+  images = convert_from_path(pdf_output_file)
+  # to numpy array
+  image = np.array(images[0]).transpose((2,0,1))
+
+
+  return image
+
 def str2intlist(v):
  if len(v) == 0:
    return []
  return [int(k) for k in v.split(',')]
 
+
+def get_subdirs(directory, max_depth):
+  if max_depth == 0:
+    if os.path.isdir(directory):
+      return [directory]
+    else:
+      return []
+  else:
+    directories = listdir(directory, prepend_folder=True, type='folder')
+    all_subdirs = []
+    for dir in directories:
+      all_subdirs.extend(get_subdirs(dir, max_depth=max_depth - 1))
+    return all_subdirs
 
 def cross_product_mat_sub_x_torch(v):
   assert len(v.shape) == 3 and v.shape[1:] == (3,1)
@@ -524,7 +591,6 @@ def str2bool(v):
     return False
   else:
     raise argparse.ArgumentTypeError('Boolean (yes, true, t, y or 1, lower or upper case) string expected.')
-
 
 def add_line(im, origin_x_y, end_x_y, color=(255, 0, 0)):
   im = Image.fromarray(im.transpose())
@@ -806,16 +872,18 @@ def list_of_lists_into_single_list(list_of_lists):
   return flat_list
 
 
-def find_all_files_recursively(folder, prepend_path=False, extension=None, progress=False, substring=None):
+def find_all_files_recursively(folder, prepend_folder=False, extension=None, progress=False, substring=None):
   if extension is None:
     glob_expresion = '*'
   else:
     glob_expresion = '*' + extension
   all_files = []
   for f in Path(folder).rglob(glob_expresion):
-    file_name = str(f) if prepend_path else f.name
+    file_name = str(f) if prepend_folder else f.name
     if substring is None or substring in file_name:
       all_files.append(file_name)
+      if progress and len(all_files) % 1000 == 0:
+        print("Found {} files".format(len(all_files)))
   return all_files
 
 def interlace(list_of_lists):
@@ -1833,7 +1901,7 @@ def mkdir(dir):
     os.mkdir(dir)
   return
 
-def delete(file):
+def delete_file(file):
   if os.path.exists(file):
     os.remove(file)
 
@@ -2297,9 +2365,6 @@ def get_jsonparsed_data(url):
     return json.loads(data)
 
 
-url = ("http://maps.googleapis.com/maps/api/geocode/json?"
-       "address=googleplex&sensor=false")
-print(get_jsonparsed_data(url))
 
 def np_to_tensor(np_obj):
   return torch.FloatTensor(np_obj)
@@ -2673,11 +2738,26 @@ def get_gpu_stats(counts=10, desired_time_diffs_ms=0):
 
   return gpus
 
+def get_file_size_bytes(file):
+  file_size = os.stat(file).st_size
+  return file_size
 
-def get_randm_number_from_timestamp():
+
+
+def get_random_number_from_timestamp():
   return time.time_ns() % 2 ** 32
+
+
+def checkpoint_can_be_loaded(checkpoint):
+  try:
+    a = torch.load(checkpoint, map_location=torch.device('cpu'))
+  except Exception as e:
+    print(e)
+    return False
+  return True
 
 if __name__ == '__main__':
   gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)
   print(gpus)
   a = 1
+

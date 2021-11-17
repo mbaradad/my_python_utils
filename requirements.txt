@@ -26,3 +26,4 @@ kornia
 pypng
 GPUtil
 opencv-python
+p_tqdm

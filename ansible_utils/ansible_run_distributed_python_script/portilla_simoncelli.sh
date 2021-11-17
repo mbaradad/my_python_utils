@@ -16,4 +16,4 @@ source activate default_env37
 source $HOME/.bash_commands/all
 cd $HOME/no_training_cnn/contrastive_image_models;
 export PYTHONPATH=..
-python image_generation/dump_minerl.py
+python image_generation/portilla_simoncelli/texture_synthesis.py
