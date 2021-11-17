@@ -4,6 +4,8 @@ import subprocess
 
 import os
 
+from datetime import datetime
+
 def str2bool(v):
   assert type(v) is str
   if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -20,18 +22,28 @@ parser.add_argument('--relaunch-if-dead', default='True', type=str2bool, help='p
 parser.add_argument('--min-run-time-seconds', default=5, type=str2bool, help='min time of running ')
 parser.add_argument('--max-total-time-days', default=30, type=int, help='whether to test if the datasets have the expected number of files')
 parser.add_argument('--max-runs', default=100, type=int, help='whether to test if the datasets have the expected number of files')
-parser.add_argument('--init-slurm-id', default=-1, type=int, help='id if the slurm script is already running. This will wait for the slurm with id to finish, and then execute the sript')
+parser.add_argument('--slurm-id', default=-1, type=int, help='id if the slurm script is already running. This will wait for the slurm with id to finish, and then execute the sript')
+parser.add_argument('--partition-8', action='store_true', help='whether to use partition 8 or the rest')
 
-
-def not_completed(slurm_id):
+def check_status(slurm_id, was_running):
   output = subprocess.run('sacct --format="User,JobID,JobName%30,Elapsed,State,NodeList" | grep -v TIMEOUT | grep mbaradad', shell=True, capture_output=True)
   lines = str(output.stdout).split('\\n')
+  is_running = False
+  found = False
   for line in lines:
     if str(slurm_id) in line:
+      found = True
       if 'CANCEL' in line or 'COMPLET' in line:
-        return False
+        return False, is_running
+      if 'RUN' in line:
+        is_running = True
 
-  return True
+  # if previously found running and not anymore,
+  if was_running and not found:
+    return False, False
+
+  # return not_completed, is_running
+  return True, is_running
 
 if __name__ == '__main__':
   args = parser.parse_args()
@@ -48,12 +60,27 @@ if __name__ == '__main__':
     print("Running slurm script {} for time: {}".format(args.script, n + 1))
     t_0 = time.time()
 
-    if args.init_slurm_id == -1:
-      output = subprocess.run("sbatch --qos=sched_level_2 " + args.script, shell=True, capture_output=True)
+    now = datetime.now()  # current date and time
+
+    if args.slurm_id == -1:
+      commands = ["sbatch"]
+      if args.partition_8:
+        commands.append("--partition=sched_system_all_8")
+      commands.append(args.script)
+      commands.append("--qos=sched_level_2")
+      print(" ".join(commands))
+
+      output = subprocess.run(commands, shell=False, capture_output=True)
+      date_time = now.strftime("%m/%d/%Y, %H:%M:%S")
+      print("Slurm job launched at:", date_time)
       slurm_id = int(str(output.stdout).split(' job ')[-1].split('\\')[0])
+    else:
+      slurm_id = args.slurm_id
 
     print("Currently running slurm job with id: {}".format(slurm_id))
-    while not_completed(slurm_id):
+    not_completed, was_running = check_status(slurm_id, False)
+    while not_completed:
+      not_completed, was_running = check_status(slurm_id, was_running)
       time.sleep(5)
 
     t_1 = time.time()
