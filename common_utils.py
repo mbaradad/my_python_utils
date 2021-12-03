@@ -2,12 +2,14 @@
 from __future__ import division
 # we need to import this before torch:
 # https://github.com/pytorch/pytorch/issues/19739
-from nbconvert.exporters import pdf
-
 try:
+  from nbconvert.exporters import pdf
   import open3d as o3d
+  import seaborn as sns
+  from plyfile import PlyData, PlyElement
+
 except:
-  print("Failed to import open3d!")
+  print("Failed to import some optional packages, some functions may fail!")
   pass
 import torch
 from pathlib import Path
@@ -25,7 +27,6 @@ import time
 import math
 import sys
 
-import seaborn as sns
 import warnings
 import random
 import argparse
@@ -47,7 +48,6 @@ import datetime
 import json
 import difflib
 
-from plyfile import PlyData, PlyElement
 
 import torch.nn.functional as F
 from torch.autograd import Variable

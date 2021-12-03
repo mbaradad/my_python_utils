@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -J sleep_30_seconds_
-#SBATCH -o "slurm_logs/sleep_30_seconds_%j.log"
+#SBATCH -o "slurm_logs/sleep_30_seconds_%j"
 #SBATCH --mail-user=mbaradad@mit.edu
 #SBATCH --mail-type=ALL
 #SBATCH --gres=gpu:2

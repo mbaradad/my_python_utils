@@ -6,7 +6,6 @@ Pillow
 plyfile
 torch
 multiprocess
-seaborn
 matplotlib
 scipy
 plotly
@@ -19,11 +18,10 @@ pysrt
 pathos
 librosa
 tqdm
-h5py
-open3d==0.8.0
-seaborn
 kornia
 pypng
 GPUtil
 opencv-python
 p_tqdm
+nbconvert
+plotly
