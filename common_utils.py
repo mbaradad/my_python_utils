@@ -5,12 +5,12 @@ from __future__ import division
 try:
   from nbconvert.exporters import pdf
   import open3d as o3d
-  import seaborn as sns
   from plyfile import PlyData, PlyElement
-
 except:
   print("Failed to import some optional packages, some functions may fail!")
   pass
+
+import seaborn as sns
 import torch
 from pathlib import Path
 
