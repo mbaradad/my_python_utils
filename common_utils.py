@@ -5,9 +5,12 @@ from __future__ import division
 try:
   from nbconvert.exporters import pdf
   import open3d as o3d
+  from plyfile import PlyData, PlyElement
 except:
   print("Failed to import some optional packages from my_python_utils, some plotting/visualization functions may fail!")
   pass
+
+import seaborn as sns
 import torch
 from pathlib import Path
 
@@ -19,7 +22,6 @@ import os
 import cv2
 
 import seaborn as sns
-from plyfile import PlyData, PlyElement
 
 import glob
 import shutil
@@ -1895,6 +1897,8 @@ def make_dir_without_file(file):
   if len(folder) > 0:
     os.makedirs(folder, exist_ok=True)
 
+def get_hash_from_numpy_array(numpy_array):
+  return hash(numpy_array.tobytes())
 
 def mkdir(dir):
   if not os.path.exists(dir):

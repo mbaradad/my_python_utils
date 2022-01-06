@@ -24,3 +24,4 @@ GPUtil
 p_tqdm
 nbconvert
 plotly
+seaborn
