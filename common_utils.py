@@ -5,11 +5,8 @@ from __future__ import division
 try:
   from nbconvert.exporters import pdf
   import open3d as o3d
-  import seaborn as sns
-  from plyfile import PlyData, PlyElement
-
 except:
-  print("Failed to import some optional packages, some functions may fail!")
+  print("Failed to import some optional packages from my_python_utils, some plotting/visualization functions may fail!")
   pass
 import torch
 from pathlib import Path
@@ -20,6 +17,9 @@ except:
   import _pickle as pickle
 import os
 import cv2
+
+import seaborn as sns
+from plyfile import PlyData, PlyElement
 
 import glob
 import shutil
@@ -48,7 +48,6 @@ import datetime
 import json
 import difflib
 
-
 import torch.nn.functional as F
 from torch.autograd import Variable
 
@@ -61,6 +60,7 @@ from my_python_utils.flow_utils.flowlib import *
 from my_python_utils.logging_utils import *
 
 from sklearn.manifold import TSNE
+
 
 import GPUtil
 

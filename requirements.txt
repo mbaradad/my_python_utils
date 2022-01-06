@@ -21,7 +21,6 @@ tqdm
 kornia
 pypng
 GPUtil
-opencv-python
 p_tqdm
 nbconvert
 plotly
