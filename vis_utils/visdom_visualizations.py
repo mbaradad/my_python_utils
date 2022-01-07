@@ -1,7 +1,15 @@
 import plotly.graph_objs as go
 
 import skvideo
-skvideo.setFFmpegPath('/usr/bin/')
+import sys
+import os
+
+print(sys.executable)
+if 'anaconda' in sys.executable:
+  # set ffmpeg to anaconda path
+  skvideo.setFFmpegPath(os.path.split(sys.executable)[0])
+else:
+  skvideo.setFFmpegPath('/usr/bin/')
 from skvideo.io import FFmpegWriter, FFmpegReader
 
 import tempfile
@@ -30,7 +38,11 @@ if not 'NO_VISDOM' in os.environ.keys():
   with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     import visdom
-    global_vis = instantiante_visdom(12890, server='http://visiongpu09')
+    if "VISDOM_HOST" in os.environ.keys():
+      visdom_host = os.environ["VISDOM_HOST"]
+    else:
+      visdom_host = 'visiongpu09'
+    global_vis = instantiante_visdom(12890, server='http://' + visdom_host)
 
 def list_of_lists_into_single_list(list_of_lists):
   flat_list = [item for sublist in list_of_lists for item in sublist]

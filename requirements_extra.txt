@@ -1,3 +1,2 @@
-seaborn
 h5py
-seaborn
+open3d==0.8.0

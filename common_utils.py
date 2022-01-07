@@ -7,8 +7,8 @@ try:
   import open3d as o3d
   from plyfile import PlyData, PlyElement
 except Exception as e:
-  print("Failed to import some optional packages, some functions may fail! With exception:")
-  print(e)
+  # print("Failed to import some optional packages, some functions may fail! With exception:")
+  # print(e)
   pass
 
 import seaborn as sns
@@ -21,6 +21,8 @@ except:
   import _pickle as pickle
 import os
 import cv2
+
+import seaborn as sns
 
 import glob
 import shutil
@@ -49,7 +51,6 @@ import datetime
 import json
 import difflib
 
-
 import torch.nn.functional as F
 from torch.autograd import Variable
 
@@ -62,6 +63,7 @@ from my_python_utils.flow_utils.flowlib import *
 from my_python_utils.logging_utils import *
 
 from sklearn.manifold import TSNE
+
 
 import GPUtil
 
