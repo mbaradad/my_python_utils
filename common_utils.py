@@ -6,8 +6,9 @@ try:
   from nbconvert.exporters import pdf
   import open3d as o3d
   from plyfile import PlyData, PlyElement
-except:
-  print("Failed to import some optional packages, some functions may fail!")
+except Exception as e:
+  print("Failed to import some optional packages, some functions may fail! With exception:")
+  print(e)
   pass
 
 import seaborn as sns
