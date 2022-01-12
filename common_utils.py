@@ -7,7 +7,7 @@ try:
   import open3d as o3d
   from plyfile import PlyData, PlyElement
 except:
-  print("Failed to import some optional packages from my_python_utils, some plotting/visualization functions may fail!")
+  # print("Failed to import some optional packages from my_python_utils, some plotting/visualization functions may fail!")
   pass
 
 import seaborn as sns
