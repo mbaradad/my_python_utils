@@ -69,6 +69,8 @@ import GPUtil
 
 import tempfile
 
+from p_tqdm import p_map
+
 from my_python_utils.geom_utils import *
 
 global VISDOM_BIGGEST_DIM
@@ -2760,6 +2762,20 @@ def checkpoint_can_be_loaded(checkpoint):
     print(e)
     return False
   return True
+
+
+def process_in_parallel_or_not(function, elements, parallel, num_cpus=-1):
+  if parallel:
+    if num_cpus > 0:
+      return p_map(function, elements, num_cpus=num_cpus)
+    else:
+      return p_map(function, elements)
+  else:
+    returns = []
+    for k in tqdm(elements):
+      returns.append(function(k))
+
+  return returns
 
 if __name__ == '__main__':
   gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)
