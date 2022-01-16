@@ -93,6 +93,7 @@ def run_script_on_machines(get_gpu_stats_script, hosts, parallel=True, print_out
           print(machine + ': ' + output)
   return command_outputs
 
+
 if __name__ == "__main__":
   def process_output_func(linesout):
     return json.loads(linesout[0])
@@ -100,7 +101,7 @@ if __name__ == "__main__":
 
   get_running_process_script = config_script + \
     """
-    ps aux | grep python | grep mbaradad  | grep main_lincls|  grep -v grep 
+    ps aux | grep python | grep mbaradad 
     """
 
   kill_process_script = config_script + \
