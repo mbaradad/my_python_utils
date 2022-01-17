@@ -101,7 +101,7 @@ if __name__ == "__main__":
 
   get_running_process_script = config_script + \
     """
-    ps aux | grep python | grep mbaradad 
+    ps aux | grep python | grep mbaradad | grep generate_images
     """
 
   kill_process_script = config_script + \
