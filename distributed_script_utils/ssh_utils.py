@@ -64,7 +64,7 @@ def run_script_on_machines(get_gpu_stats_script, hosts, parallel=True, print_out
       ssh = paramiko.SSHClient()
       ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
       try:
-          ssh.connect(host, port, username, password, timeout=10)
+          ssh.connect(host, port, username, password, timeout=2)
 
           stdin, stdout, stderr = ssh.exec_command(command)
           linesout = stdout.readlines()
@@ -101,7 +101,7 @@ if __name__ == "__main__":
 
   get_running_process_script = config_script + \
     """
-    ps aux | grep python | grep mbaradad | grep generate_images
+    ps aux | grep python | grep mbaradad | grep train_all_gpus
     """
 
   kill_process_script = config_script + \
