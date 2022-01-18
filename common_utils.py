@@ -2751,6 +2751,10 @@ def get_file_size_bytes(file):
 def get_random_number_from_timestamp():
   return time.time_ns() % 2 ** 32
 
+def print_env_variables():
+  for k, v in os.environ.items():
+    print("{}: {}".format(k, v))
+
 
 def checkpoint_can_be_loaded(checkpoint):
   try:

@@ -44,6 +44,7 @@ if not 'NO_VISDOM' in os.environ.keys():
       visdom_host = 'visiongpu09'
     global_vis = instantiante_visdom(12890, server='http://' + visdom_host)
 
+
 def list_of_lists_into_single_list(list_of_lists):
   flat_list = [item for sublist in list_of_lists for item in sublist]
   return flat_list

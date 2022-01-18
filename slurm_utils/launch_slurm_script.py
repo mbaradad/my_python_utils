@@ -66,9 +66,9 @@ if __name__ == '__main__':
       commands = ["sbatch"]
       if args.partition_8:
         commands.append("--partition=sched_system_all_8")
-      commands.append("--exclude=node0019")
-      commands.append(args.script)
+      #commands.append("--exclude=node0019")
       commands.append("--qos=sched_level_2")
+      commands.append(args.script)
       print(" ".join(commands))
 
       output = subprocess.run(commands, shell=False, capture_output=True)
