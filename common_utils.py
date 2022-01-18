@@ -6,9 +6,8 @@ try:
   from nbconvert.exporters import pdf
   import open3d as o3d
   from plyfile import PlyData, PlyElement
-except Exception as e:
-  # print("Failed to import some optional packages, some functions may fail! With exception:")
-  # print(e)
+except:
+  # print("Failed to import some optional packages from my_python_utils, some plotting/visualization functions may fail!")
   pass
 
 import seaborn as sns
@@ -2753,6 +2752,10 @@ def get_file_size_bytes(file):
 
 def get_random_number_from_timestamp():
   return time.time_ns() % 2 ** 32
+
+def print_env_variables():
+  for k, v in os.environ.items():
+    print("{}: {}".format(k, v))
 
 
 def checkpoint_can_be_loaded(checkpoint):
