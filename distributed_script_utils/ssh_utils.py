@@ -59,8 +59,10 @@ if not 'SSH_PASSWORD' in os.environ.keys():
 else:
     password = os.environ["SSH_PASSWORD"]
 
-def run_script_on_machines(get_gpu_stats_script, hosts, parallel=True, print_output=True, process_output_func=None):
+def run_script_on_machines(get_gpu_stats_script, hosts, parallel=True, print_output=True, process_output_func=None, debug=False):
   def single_host_task(host, command):
+      if debug:
+        print("Connecting to host: " + host)
       ssh = paramiko.SSHClient()
       ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
       try:
@@ -74,13 +76,15 @@ def run_script_on_machines(get_gpu_stats_script, hosts, parallel=True, print_out
             output = process_output_func(linesout)
           else:
             output = linesout
+          if debug:
+            print("Finished connection to host: " + host)
           return (host, output)
       except Exception as e:
           #if 'Authentication failed' in str(e):
           #  print("Authentication failed. Check that the password is correct (user: {}; password: {})".format(username, password))
           return (host, "Could not be reached. Exception: " + str(e))
 
-  command_outputs = p_map(lambda x: single_host_task(x,get_gpu_stats_script), hosts, num_cpus=10 if parallel else 1)
+  command_outputs = process_in_parallel_or_not(lambda x: single_host_task(x,get_gpu_stats_script), hosts, parallel)
   if print_output:
     for machine, outputs in command_outputs:
         if len(outputs) == 0:
@@ -91,6 +95,7 @@ def run_script_on_machines(get_gpu_stats_script, hosts, parallel=True, print_out
           while len(output) > 0 and output[-1] == '\n':
             output = output[:-1]
           print(machine + ': ' + output)
+
   return command_outputs
 
 
@@ -101,7 +106,7 @@ if __name__ == "__main__":
 
   get_running_process_script = config_script + \
     """
-    ps aux | grep python | grep mbaradad | grep train_all_gpus
+    ps aux | grep python | grep mbaradad | grep dump
     """
 
   kill_process_script = config_script + \
@@ -111,9 +116,12 @@ if __name__ == "__main__":
     """
 
   # excluded_machines = ['visiongpu09', 'visiongpu37']
-  excluded_machines = None
+  excluded_machines = ['visiongpu44']
   if not excluded_machines is None:
     hosts = [k for k in all_hosts if not k in excluded_machines]
 
+  print("If it gets stuck, run with parallel=False, see what machine is making it get stuck and put it in excluded_machines!")
+  parallel = True
+  debug = False
   #run_script_on_machines(kill_process_script, all_hosts, parallel=True)
-  run_script_on_machines(get_running_process_script, all_hosts, parallel=True)
+  run_script_on_machines(get_running_process_script, all_hosts, parallel=parallel, debug=debug)
