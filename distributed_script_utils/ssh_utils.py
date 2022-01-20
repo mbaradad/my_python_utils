@@ -106,7 +106,7 @@ if __name__ == "__main__":
 
   get_running_process_script = config_script + \
     """
-    ps aux | grep python | grep mbaradad | grep dump
+    ps aux | grep python | grep mbaradad | grep moco
     """
 
   kill_process_script = config_script + \
