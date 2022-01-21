@@ -2780,6 +2780,15 @@ def process_in_parallel_or_not(function, elements, parallel, num_cpus=-1):
 
   return returns
 
+def get_directory_and_file(filepath):
+  dirname = os.path.dirname(filepath)
+  if not os.path.isdir(filepath):
+    filename = filepath.split('/')[-1]
+  else:
+    filename = ''
+  return dirname, filename
+
+
 if __name__ == '__main__':
   gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)
   print(gpus)
