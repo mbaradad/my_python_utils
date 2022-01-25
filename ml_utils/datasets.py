@@ -11,18 +11,21 @@ def default_loader(path):
 from torchvision.transforms import ToTensor
 
 class ImageFilelist(data.Dataset):
-  def __init__(self, imlist, transform=ToTensor(), loader=default_loader):
+  def __init__(self, imlist, transform=ToTensor(), image_loader=default_loader, return_filename=False):
     self.transform = transform
-    self.loader = loader
+    self.loader = image_loader
     self.imlist = imlist
+    self.return_filename = return_filename
 
   def __getitem__(self, index):
     impath= self.imlist[index]
     img = self.loader(impath)
     if self.transform is not None:
       img = self.transform(img)
-
-    return img
+    if self.return_filename:
+      return img, impath
+    else:
+      return img
 
   def __len__(self):
     return len(self.imlist)

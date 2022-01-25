@@ -174,6 +174,7 @@ def read_text_file_lines(filename, stop_at=-1):
   return lines
 
 def write_text_file_lines(lines, file):
+  assert type(lines) is list, "Lines should be a list of strings"
   with open(file, 'w') as file_handler:
     for item in lines:
       file_handler.write("%s\n" % item)

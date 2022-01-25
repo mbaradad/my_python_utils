@@ -187,6 +187,8 @@ def compute_plane_intersections_from_camera(extrinsics, K, P, mask):
 #  from kornia import pixel2cam as k_pixel2cam
 #  from kornia import create_meshgrid, convert_points_to_homogeneous
 
+
+
 pixel_coords_cpu = None
 pixel_coords_cuda = None
 
