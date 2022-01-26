@@ -877,7 +877,7 @@ def list_of_lists_into_single_list(list_of_lists):
   return flat_list
 
 
-def find_all_files_recursively(folder, prepend_folder=False, extension=None, progress=False, substring=None):
+def find_all_files_recursively(folder, prepend_folder=False, extension=None, progress=False, substring=None, include_folders=False):
   if extension is None:
     glob_expresion = '*'
   else:
@@ -886,9 +886,10 @@ def find_all_files_recursively(folder, prepend_folder=False, extension=None, pro
   for f in Path(folder).rglob(glob_expresion):
     file_name = str(f) if prepend_folder else f.name
     if substring is None or substring in file_name:
-      all_files.append(file_name)
-      if progress and len(all_files) % 1000 == 0:
-        print("Found {} files".format(len(all_files)))
+      if include_folders or not os.path.isdir(file_name):
+        all_files.append(file_name)
+        if progress and len(all_files) % 1000 == 0:
+          print("Found {} files".format(len(all_files)))
   return all_files
 
 def interlace(list_of_lists):
