@@ -33,7 +33,7 @@ def check_status(slurm_id, was_running):
   for line in lines:
     if str(slurm_id) in line:
       found = True
-      if 'CANCEL' in line or 'COMPLET' in line:
+      if 'CANCEL' in line or 'COMPLET' in line or 'NODE_FAIL' in line:
         return False, is_running
       if 'RUN' in line:
         is_running = True
