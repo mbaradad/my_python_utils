@@ -40,6 +40,7 @@ import struct
 from pathlib import Path
 
 from scipy.ndimage.filters import gaussian_filter
+from multiprocessing.pool import ThreadPool
 
 import imageio
 
@@ -62,6 +63,8 @@ from my_python_utils.flow_utils.flowlib import *
 from my_python_utils.logging_utils import *
 
 from sklearn.manifold import TSNE
+
+from multiprocessing.pool import ThreadPool
 
 import GPUtil
 import tempfile
@@ -2767,8 +2770,13 @@ def checkpoint_can_be_loaded(checkpoint):
   return True
 
 
-def process_in_parallel_or_not(function, elements, parallel, num_cpus=-1):
+def process_in_parallel_or_not(function, elements, parallel, use_pathos=False, num_cpus=-1):
+  from pathos.multiprocessing import Pool
   if parallel:
+    if use_pathos:
+      pool = Pool()
+      pool.apply(function, elements)
+
     if num_cpus > 0:
       return p_map(function, elements, num_cpus=num_cpus)
     else:
