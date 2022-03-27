@@ -21,7 +21,7 @@ parser.add_argument('script', type=str, help='scipt to launch')
 parser.add_argument('--relaunch-if-dead', default='True', type=str2bool, help='path to dataset')
 parser.add_argument('--min-run-time-seconds', default=5, type=str2bool, help='min time of running ')
 parser.add_argument('--max-total-time-days', default=30, type=int, help='whether to test if the datasets have the expected number of files')
-parser.add_argument('--max-runs', default=100, type=int, help='whether to test if the datasets have the expected number of files')
+parser.add_argument('--max-runs', default=200, type=int, help='whether to test if the datasets have the expected number of files')
 parser.add_argument('--slurm-id', default=-1, type=int, help='id if the slurm script is already running. This will wait for the slurm with id to finish, and then execute the sript')
 parser.add_argument('--partition-8', action='store_true', help='whether to use partition 8 or the rest')
 
@@ -56,7 +56,7 @@ if __name__ == '__main__':
 
   n = 0
 
-  while t_1 - t_init < args.max_total_time_days * 3600 * 24:
+  while t_1 - t_init < args.max_total_time_days * 3600 * 24 and n < args.max_runs:
     print("Running slurm script {} for time: {}".format(args.script, n + 1))
     t_0 = time.time()
 
