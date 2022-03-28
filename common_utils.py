@@ -73,6 +73,8 @@ from p_tqdm import p_map
 
 from my_python_utils.geom_utils import *
 
+import subprocess
+
 global VISDOM_BIGGEST_DIM
 VISDOM_BIGGEST_DIM = 600
 
@@ -679,7 +681,16 @@ def add_circle(im, centers_x_y, radius=5, color=(255, 0, 0)):
     return np.array(im_with_circle.get()).transpose((2, 0, 1))
 
 def add_arrow(im, origins_x_y, ends_x_y, colors=(255, 0, 0), width=5):
+  assert len(im.shape) == 3 and im.shape[0] == 3, "Only implemented for colored images"
+
   im_with_arrow = np.array(im).transpose((1, 2, 0))
+
+  if type(origins_x_y) is np.ndarray and len(origins_x_y.shape) == 2:
+    origins_x_y = [k for k in origins_x_y]
+
+  if type(ends_x_y) is np.ndarray and len(ends_x_y.shape) == 2:
+    ends_x_y = [k for k in ends_x_y]
+
   if not type(origins_x_y) is list:
     origins_x_y = [origins_x_y]
   if not type(ends_x_y) is list:
@@ -2796,9 +2807,13 @@ def get_directory_and_file(filepath):
     filename = ''
   return dirname, filename
 
+def print_nvidia_smi():
+  nvidia_smi_output = subprocess.run(["nvidia-smi"])
+  print(nvidia_smi_output)
 
 if __name__ == '__main__':
-  gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)
-  print(gpus)
-  a = 1
+  print_nvidia_smi()
+  # gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)
+  # print(gpus)
+  # a = 1
 
