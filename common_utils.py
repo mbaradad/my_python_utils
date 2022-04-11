@@ -35,7 +35,7 @@ import argparse
 import matplotlib
 from tqdm import tqdm
 
-from scipy import misc
+from scipy import misc as scipy_misc
 import struct
 from pathlib import Path
 
@@ -1709,7 +1709,7 @@ def all_labels(array, nbins=20, legend=None):
   tmp_fig_file = '/tmp/histogram.png'
   pyplt.savefig(tmp_fig_file, bbox_inches='tight', pad_inches=0)
 
-  image = misc.imread(tmp_fig_file)
+  image = scipy_misc.imread(tmp_fig_file)
   pyplt.close()
   return np.transpose(image,[2,0,1])
 
@@ -1778,7 +1778,7 @@ def create_legend_classes(class_names, class_colors, class_ids, image=None):
   tmp_fig_file = '/tmp/legend.png'
   pyplt.savefig(tmp_fig_file, bbox_inches='tight', pad_inches=0)
 
-  image = misc.imread(tmp_fig_file)
+  image = scipy_misc.imread(tmp_fig_file)
 
   return image
 
