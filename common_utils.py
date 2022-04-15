@@ -19,7 +19,7 @@ try:
 except:
   import _pickle as pickle
 import os
-import cv2
+# import cv2
 
 import seaborn as sns
 
