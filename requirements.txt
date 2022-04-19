@@ -4,12 +4,10 @@ scikit-image
 imageio
 Pillow
 plyfile
-torch
 multiprocess
 matplotlib
 scipy
 plotly
-tensorboardX
 pyyaml
 path.py
 blessings
