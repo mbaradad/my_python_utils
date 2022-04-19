@@ -19,7 +19,7 @@ try:
 except:
   import _pickle as pickle
 import os
-import cv2
+# import cv2
 
 import seaborn as sns
 
@@ -35,7 +35,7 @@ import argparse
 import matplotlib
 from tqdm import tqdm
 
-from scipy import misc
+from scipy import misc as scipy_misc
 import struct
 from pathlib import Path
 
@@ -72,6 +72,8 @@ import tempfile
 from p_tqdm import p_map
 
 from my_python_utils.geom_utils import *
+
+import subprocess
 
 global VISDOM_BIGGEST_DIM
 VISDOM_BIGGEST_DIM = 600
@@ -679,7 +681,16 @@ def add_circle(im, centers_x_y, radius=5, color=(255, 0, 0)):
     return np.array(im_with_circle.get()).transpose((2, 0, 1))
 
 def add_arrow(im, origins_x_y, ends_x_y, colors=(255, 0, 0), width=5):
+  assert len(im.shape) == 3 and im.shape[0] == 3, "Only implemented for colored images"
+
   im_with_arrow = np.array(im).transpose((1, 2, 0))
+
+  if type(origins_x_y) is np.ndarray and len(origins_x_y.shape) == 2:
+    origins_x_y = [k for k in origins_x_y]
+
+  if type(ends_x_y) is np.ndarray and len(ends_x_y.shape) == 2:
+    ends_x_y = [k for k in ends_x_y]
+
   if not type(origins_x_y) is list:
     origins_x_y = [origins_x_y]
   if not type(ends_x_y) is list:
@@ -1698,7 +1709,7 @@ def all_labels(array, nbins=20, legend=None):
   tmp_fig_file = '/tmp/histogram.png'
   pyplt.savefig(tmp_fig_file, bbox_inches='tight', pad_inches=0)
 
-  image = misc.imread(tmp_fig_file)
+  image = scipy_misc.imread(tmp_fig_file)
   pyplt.close()
   return np.transpose(image,[2,0,1])
 
@@ -1767,7 +1778,7 @@ def create_legend_classes(class_names, class_colors, class_ids, image=None):
   tmp_fig_file = '/tmp/legend.png'
   pyplt.savefig(tmp_fig_file, bbox_inches='tight', pad_inches=0)
 
-  image = misc.imread(tmp_fig_file)
+  image = scipy_misc.imread(tmp_fig_file)
 
   return image
 
@@ -2796,9 +2807,13 @@ def get_directory_and_file(filepath):
     filename = ''
   return dirname, filename
 
+def print_nvidia_smi():
+  nvidia_smi_output = subprocess.run(["nvidia-smi"])
+  print(nvidia_smi_output)
 
 if __name__ == '__main__':
-  gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)
-  print(gpus)
-  a = 1
+  print_nvidia_smi()
+  # gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)
+  # print(gpus)
+  # a = 1
 
