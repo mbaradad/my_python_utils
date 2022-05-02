@@ -3,12 +3,12 @@ import torch.utils.data as data
 from PIL import Image
 import os
 import os.path
+from torchvision.transforms import ToTensor
 
 
 def default_loader(path):
   return Image.open(path).convert('RGB')
 
-from torchvision.transforms import ToTensor
 
 class ImageFilelist(data.Dataset):
   def __init__(self, imlist, transform=ToTensor(), image_loader=default_loader, return_filename=False):

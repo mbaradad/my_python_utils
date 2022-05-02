@@ -117,6 +117,7 @@ class ThreadedMultiqueueSafer():
     self.safe_func = safe_func
     self.use_threading = use_threading
     self.n_workers = n_workers
+    self.processes = []
 
     def safe_results_process(queue, safe_func):
       while True:
@@ -132,7 +133,9 @@ class ThreadedMultiqueueSafer():
 
     if self.use_threading:
       for i in range(n_workers):
-        Process(target=safe_results_process, args=[self.queues[i], self.safe_func]).start()
+        p = Process(target=safe_results_process, args=[self.queues[i], self.safe_func])
+        self.processes.append(p)
+        p.start()
 
   def put_safe_dict(self, safe_dict):
     if self.use_threading:
@@ -144,6 +147,23 @@ class ThreadedMultiqueueSafer():
       self.queues[i].put(safe_dict)
     else:
       self.safe_func(**safe_dict)
+
+  def queues_empty(self):
+    return all([queue.empty() for queue in self.queues])
+
+  def destroy(self):
+    if not self.queues_empty():
+      print("Not all queues are empty, won't destroy!")
+      return
+    else:
+      for p in self.processes:
+        p.terminate()
+
+  def wait_to_complete_and_destro(self, sleep_time_seconds=1):
+    while not self.queues_empty():
+      time.sleep(sleep_time_seconds)
+
+    self.destroy()
 
 def moving_average(x, w):
   return np.convolve(x, np.ones(w), 'valid') / w
@@ -237,6 +257,16 @@ def chunk_list(seq, n_chunks):
   while last < len(seq):
     out.append(seq[int(last):int(last + avg)])
     last += avg
+
+  return out
+
+def chunk_list_max_len(seq, max_len):
+  out = []
+  last = 0
+
+  while last < len(seq):
+    out.append(seq[int(last):int(last + max_len)])
+    last += max_len
 
   return out
 
@@ -889,13 +919,15 @@ def list_of_lists_into_single_list(list_of_lists):
   return flat_list
 
 
-def find_all_files_recursively(folder, prepend_folder=False, extension=None, progress=False, substring=None, include_folders=False):
+def find_all_files_recursively(folder, prepend_folder=False, extension=None, progress=False, substring=None, include_folders=False, max_n_files=-1):
   if extension is None:
     glob_expresion = '*'
   else:
     glob_expresion = '*' + extension
   all_files = []
   for f in Path(folder).rglob(glob_expresion):
+    if max_n_files > 0 and len(all_files) >= max_n_files:
+      return all_files
     file_name = str(f) if prepend_folder else f.name
     if substring is None or substring in file_name:
       if include_folders or not os.path.isdir(file_name):
