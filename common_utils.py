@@ -520,16 +520,16 @@ def get_image_size_fast_png(file_path):
 
   return width, height
 
-def tile_images(imgs, tiles, tile_size, border_pixels=0, border_color=(0,0,0)):
-  tile_size_x, tile_size_y = tile_size
-  n_tiles_x, n_tiles_y = tiles
+def tile_images(imgs, tiles_x_y, tile_size_x_y, border_pixels=0, border_color=(0, 0, 0)):
+  tile_size_x, tile_size_y = tile_size_x_y
+  n_tiles_x, n_tiles_y = tiles_x_y
   final_img = np.zeros((3, tile_size_y * n_tiles_y + border_pixels * (n_tiles_y - 1), tile_size_x * n_tiles_x + border_pixels * (n_tiles_x - 1)))
   final_img += np.array(border_color)[:, None, None]
   n_imgs = len(imgs)
   k = 0
   for i in range(n_tiles_y):
     for j in range(n_tiles_x):
-      tile = myimresize(tonumpy(imgs[k]), tile_size)
+      tile = myimresize(tonumpy(imgs[k]), (tile_size_y, tile_size_x))
       if len(tile.shape) == 2:
         tile = tile[None,:,:]
       if tile.shape[0] == 1:
