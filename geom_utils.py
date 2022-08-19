@@ -131,7 +131,10 @@ import sys
 from my_python_utils.common_utils import *
 
 def compute_normals_from_closest_image_coords(coords, mask=None):
-    #TODO: maybe compute normals with bigger region?
+    # TODO: maybe change cs to be [..., :-1,:-1] as it seems more intuitive
+    assert coords.shape[1] == 3 and len(coords.shape) == 4
+    assert mask is None or (mask.shape[0] == coords.shape[0] and mask.shape[2:] == coords.shape[2:])
+
     x_coords = coords[:,0,:,:]
     y_coords = coords[:,1,:,:]
     z_coords = coords[:,2,:,:]
@@ -141,7 +144,10 @@ def compute_normals_from_closest_image_coords(coords, mask=None):
       ls = torch.cat((x_coords[:, None, 1:, :-1], y_coords[:, None, 1:, :-1], z_coords[:, None, 1:, :-1]), dim=1)
       cs = torch.cat((x_coords[:, None, 1:, 1:], y_coords[:, None, 1:, 1:], z_coords[:, None,1:,1:]), dim=1)
 
-      n = torch.cross((ls - cs),(ts - cs), dim=1)
+      n = torch.cross((ls - cs),(ts - cs), dim=1) * 1e10
+
+      # if normals appear incorrect, it may be becuase of the 1e-100, if the scale of the pcl is two small 1e-5,
+      # it was giving errors with a constant of 1e-20 (and it was replaced to 1e-100), we do this to avoid nans
       n_norm = n/(torch.sqrt(torch.abs((n*n).sum(1) + 1e-20))[:,None,:,:])
     else:
       ts = np.concatenate((x_coords[:, None, :-1, 1:], y_coords[:, None, :-1, 1:], z_coords[:, None,:-1,1:]), axis=1)
@@ -156,7 +162,7 @@ def compute_normals_from_closest_image_coords(coords, mask=None):
       valid_ts = mask[:,:, :-1, 1:]
       valid_ls = mask[:,:, 1:, :-1]
       valid_cs = mask[:,:, 1:, 1:]
-      if type(mask) is torch.tensor:
+      if type(mask) is torch.Tensor:
         final_mask = valid_ts * valid_ls * valid_cs
       else:
         final_mask = np.logical_and(np.logical_and(valid_ts, valid_ls), valid_cs)
@@ -173,7 +179,7 @@ def compute_normals_from_pcl(coords, viewpoint, radius=0.2, max_nn=30):
   coords_to_pcd = coords.transpose()
   pcd.points = o3d.utility.Vector3dVector(coords_to_pcd)
   pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=radius,max_nn=max_nn))
-  estimated_normals = np.array(pcd.normals)
+  estimated_normals = np.array(pcd.geometry_to_fit)
   # orient towards viewpoint
   normal_viewpoint_signs = np.sign((estimated_normals*(coords_to_pcd - viewpoint[None,:])).sum(-1))
   corrected_normals = (estimated_normals*normal_viewpoint_signs[:,None]).transpose().reshape(coords.shape)
@@ -183,9 +189,13 @@ def compute_plane_intersections_from_camera(extrinsics, K, P, mask):
   assert len(P.shape) == 4 and P.shape[0] == 4
   extrinsics
 
-#if int(torch.__version__.split('.')[0]) > 0:
-#  from kornia import pixel2cam as k_pixel2cam
-#  from kornia import create_meshgrid, convert_points_to_homogeneous
+if int(torch.__version__.split('.')[0]) > 0:
+  try:
+    from kornia.geometry.camera.pinhole import pixel2cam as k_pixel2cam
+    from kornia.utils import create_meshgrid
+    from kornia.geometry.conversions import convert_points_to_homogeneous
+  except Exception as e:
+    print("Failed to import kornia. Shouldn't be an issue if no geom utils are used")
 
 
 
@@ -315,10 +325,10 @@ def euler2mat_torch(angle):
   rotMat = xmat @ ymat @ zmat
   return rotMat
 
-def rotation_matrix_two_vectors(a, b):
+def rotation_matrix_two_vectors(vector_from, vector_to):
   # returns r st np.matmul(r, a) = b
-  v = np.cross(a,b)
-  c = np.dot(a,b)
+  v = np.cross(vector_from, vector_to)
+  c = np.dot(vector_from, vector_to)
   s = np.linalg.norm(v)
   I = np.identity(3)
   vXStr = '{} {} {}; {} {} {}; {} {} {}'.format(0, -v[2], v[1], v[2], 0, -v[0], -v[1], v[0], 0)

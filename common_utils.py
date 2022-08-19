@@ -10,9 +10,15 @@ except:
   # print("Failed to import some optional packages from my_python_utils, some plotting/visualization functions may fail!")
   pass
 
+import random
+
+def randint_replacement(*args, **kwargs): raise Exception("Don't use random.randint as it can sample high, use numpy.random.randint")
+random.randint = randint_replacement
+
 import seaborn as sns
 import torch
 from pathlib import Path
+import git
 
 try:
   import cPickle as pickle
@@ -70,16 +76,35 @@ import GPUtil
 import tempfile
 
 from p_tqdm import p_map
+import hashlib
 
+import contextlib
 from my_python_utils.geom_utils import *
 
 import subprocess
 
+# to be able to do np.savez_compressed(filename, dict_of(a,b,c))
+from sorcery import dict_of
+
 global VISDOM_BIGGEST_DIM
 VISDOM_BIGGEST_DIM = 600
 
+# dictionary that can be accessed with .attribute_name as well as ['attribute_name']
+class AttrDict(dict):
+  def __init__(self, *args, **kwargs):
+    super(AttrDict, self).__init__(*args, **kwargs)
+    self.__dict__ = self
+
+# to do with no_context:, to keep syntax but remove the effect while debugging
+# for example with torch.no_grad() -> with no_context():
+no_context = contextlib.suppress
+
 def get_hostname():
   return socket.gethostname()
+
+def get_conda_env():
+  assert 'anaconda' in sys.executable and sys.executable
+  return sys.executable.split('/')[-3]
 
 def select_gpus(gpus_arg):
   #so that default gpu is one of the selected, instead of 0
@@ -279,14 +304,24 @@ def tsne(X, components=2):
 def png_16_bits_imread(file):
   return cv2.imread(file, -cv2.IMREAD_ANYDEPTH)
 
-def cv2_imread(file, return_BGR=False):
-  im = cv2.imread(file)
+def cv2_imread(file, return_BGR=False, read_alpha=False):
+  im = None
+  if read_alpha:
+    try:
+      im = cv2.imread(file, cv2.IMREAD_UNCHANGED)
+    except:
+      print("Failed to read alpha channel, will us standard imread!")
+  if not read_alpha or im is None:
+      im = cv2.imread(file)
   if im is None:
     raise Exception('Image {} could not be read!'.format(file))
   im = im.transpose(2,0,1)
   if return_BGR:
     return im
-  return im[::-1, :, :]
+  if im.shape[0] == 4:
+    return np.concatenate((im[:3][::-1], im[3:4]))
+  else:
+    return im[::-1, :, :]
 
 def im_to_bw(image):
   assert len(image.shape) == 3
@@ -520,9 +555,16 @@ def get_image_size_fast_png(file_path):
 
   return width, height
 
-def tile_images(imgs, tiles_x_y, tile_size_x_y, border_pixels=0, border_color=(0, 0, 0)):
-  tile_size_x, tile_size_y = tile_size_x_y
-  n_tiles_x, n_tiles_y = tiles_x_y
+def tile_images(imgs, tiles_x_y=None, tile_size_x_y=None, border_pixels=0, border_color=(0, 0, 0)):
+  if tile_size_x_y is None:
+    tile_size_y, tile_size_x = imgs[0].shape[-2:]
+  else:
+    tile_size_x, tile_size_y = tile_size_x_y
+  if tiles_x_y is None:
+    n_tiles_x = int(np.ceil(np.sqrt(len(imgs))))
+    n_tiles_y = n_tiles_x
+  else:
+    n_tiles_x, n_tiles_y = tiles_x_y
   final_img = np.zeros((3, tile_size_y * n_tiles_y + border_pixels * (n_tiles_y - 1), tile_size_x * n_tiles_x + border_pixels * (n_tiles_x - 1)))
   final_img += np.array(border_color)[:, None, None]
   n_imgs = len(imgs)
@@ -630,11 +672,11 @@ def str2bool(v):
   else:
     raise argparse.ArgumentTypeError('Boolean (yes, true, t, y or 1, lower or upper case) string expected.')
 
-def add_line(im, origin_x_y, end_x_y, color=(255, 0, 0)):
+def add_line(im, origin_x_y, end_x_y, color=(255, 0, 0), width=0):
   im = Image.fromarray(im.transpose())
   draw = ImageDraw.Draw(im)
 
-  draw.line((origin_x_y[1], origin_x_y[0], end_x_y[1], end_x_y[0]), fill=color)
+  draw.line((origin_x_y[1], origin_x_y[0], end_x_y[1], end_x_y[0]), fill=color, width=width)
 
   return np.array(im).transpose()
 
@@ -955,12 +997,22 @@ def str2img(string_to_print, height=100, width=100):
   d.text((20, 20), string_to_print, fill=(255, 255, 255))
   return np.array(img).transpose((2,0,1))
 
-def count_trainable_parameters(network, return_as_string):
+def count_trainable_parameters(network, return_as_string=False):
   n_parameters = sum(p.numel() for p in network.parameters() if p.requires_grad)
   if return_as_string:
     return f"{n_parameters:,}"
   else:
     return n_parameters
+
+import math
+millnames = ['',' Thousand',' Million',' Billion',' Trillion']
+
+def beautify_integer(n):
+    n = float(n)
+    millidx = max(0,min(len(millnames)-1,
+                        int(math.floor(0 if n == 0 else math.log10(abs(n))/3))))
+
+    return '{:.0f}{}'.format(n / 10**(3 * millidx), millnames[millidx])
 
 def create_plane_pointcloud_coords(center, normal, extent, samples, color=(0,0,0)):
   if normal[0] == 0 and normal[1] == 0:
@@ -1485,6 +1537,8 @@ def show_pointcloud_errors(coords, errors, title='none', win=None, env=None, mar
 
 def prepare_pointclouds_and_colors(coords, colors, default_color=(0,0,0)):
   if type(coords) is list:
+    coords = [k for k in coords]
+    colors = [k for k in colors]
     for k in range(len(coords)):
       assert len(coords) == len(colors)
       coords[k], colors[k] = prepare_single_pointcloud_and_colors(coords[k], colors[k], default_color)
@@ -1946,7 +2000,10 @@ def make_dir_without_file(file):
     os.makedirs(folder, exist_ok=True)
 
 def get_hash_from_numpy_array(numpy_array):
-  return hash(numpy_array.tobytes())
+  # hash returns different hashes on each execution, see:
+  # https://stackoverflow.com/questions/27522626/hash-function-in-python-3-3-returns-different-results-between-sessions
+  # because of this we use md5
+  return str(hashlib.md5(numpy_array.tobytes()).hexdigest())
 
 def mkdir(dir):
   if not os.path.exists(dir):
@@ -2812,6 +2869,24 @@ def checkpoint_can_be_loaded(checkpoint):
     return False
   return True
 
+def delete_all_checkpoints_except_last_loadable(save_folder):
+  checkpoints = sorted([save_folder + '/' + k for k in listdir(save_folder, prepend_folder=False) if
+                        k.startswith('checkpoint_') and k.endswith('.pth.tar')])
+
+  some_loaded = False
+  while len(checkpoints) > 0:
+    checkpoint = checkpoints.pop(-1)
+    if not some_loaded:
+      if checkpoint_can_be_loaded(checkpoint):
+        some_loaded = True
+      else:
+        # it's an invalid checkpoint, so raise exception and delete manually, or check that there's not a mistake with
+        # checkpoint_can_be_loaded
+        raise Exception("Checkpoint {} could not be loaded".format(checkpoint))
+    else:
+      os.remove(checkpoint)
+  return
+
 
 def process_in_parallel_or_not(function, elements, parallel, use_pathos=False, num_cpus=-1):
   from pathos.multiprocessing import Pool
@@ -2843,14 +2918,14 @@ def print_nvidia_smi():
   nvidia_smi_output = subprocess.run(["nvidia-smi"])
   print(nvidia_smi_output)
 
+def get_current_git_commit():
+  repo = git.Repo(search_parent_directories=True)
+  sha = repo.head.object.hexsha
+
+
 if __name__ == '__main__':
-  img = best_centercrop_image(cv2_imread('/data/vision/torralba/movies_sfm/home/no_training_cnn/tests/dog.jpg'), 224, 224)
-  video = np.array([img for _ in range(10)])
-
-  imshow(video, title='video_test')
-
-  a = 1
-
+  print_nvidia_smi()
+  random.randint(1,3)
   # gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)
   # print(gpus)
   # a = 1

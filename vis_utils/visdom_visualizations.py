@@ -209,6 +209,7 @@ def vidshow_gif_path(gif_path, title=None, win=None, env=None, vis=None):
   html_2 = '''<img src='data:image/gif;base64,{}' />  '''.format(str(encoded_string)[2:-1])
   vis.text(html_2, win=win, opts=opts, env=env)
 
+  return gif_path
 
 def vidshow_vis(frames, title=None, window=None, env=None, vis=None, biggest_dim=None, fps=10):
   # if it does not work, change the ffmpeg. It was failing using anaconda ffmpeg default video settings,
@@ -229,7 +230,12 @@ def vidshow_vis(frames, title=None, window=None, env=None, vis=None, biggest_dim
       actual_frame = frames[i]
     else:
       actual_frame = np.array(np.transpose(scale_image_biggest_dim(np.transpose(frames[i]), biggest_dim)), dtype='uint8')
-    writer.writeFrame(actual_frame)
+    try:
+      writer.writeFrame(actual_frame)
+    except Exception as e:
+      print(e)
+      print("If this fails, copy paste the ffmpeg command, as probably there are system libraries that are not been properly installed")
+      print("e.g. libopenh264.so.5: cannot open shared object file: No such file or directory")
   writer.close()
 
   os.chmod(videofile, 0o777)
@@ -255,15 +261,17 @@ def myimresize(img, target_shape, interpolation_mode=cv2.INTER_NEAREST):
 
   assert len(target_shape) == 2, "Passed shape {}. Should only be (height, width)".format(target_shape)
   if max > min and not uint_mode:
+    # normalize image and undo normalization after the resize
     img = (img - min)/(max - min)
   if len(img.shape) == 3 and img.shape[0] in [1,3]:
     if img.shape[0] == 3:
-      img = np.transpose(cv2.resize(np.transpose(img, (1,2,0)), target_shape[::-1]), (2,0,1))
+      img = np.transpose(cv2.resize(np.transpose(img, (1,2,0)), target_shape[::-1], interpolation=interpolation_mode), (2,0,1))
     else:
       img = cv2.resize(img[0], target_shape[::-1], interpolation=interpolation_mode)[None,:,:]
   else:
     img = cv2.resize(img, target_shape[::-1], interpolation=interpolation_mode)
   if max > min and not uint_mode:
+    # undo normalization
     return (img*(max - min) + min)
   else:
     return img

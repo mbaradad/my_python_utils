@@ -23,3 +23,7 @@ p_tqdm
 nbconvert
 plotly
 seaborn
+sorcery
+simple_3dviz
+dominate
+gitpython
