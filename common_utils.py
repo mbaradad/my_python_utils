@@ -833,7 +833,7 @@ def preprocess_im_to_plot(im, normalize_image=True):
     pic = Image.open(im)
     im = np.array(pic, dtype='float32')
   im = tonumpy(im)
-  if im.dtype == np.bool:
+  if im.dtype == bool:
     im = im * 1.0
   if im.dtype == 'uint8':
     im = im / 255.0
@@ -2844,7 +2844,13 @@ def print_nvidia_smi():
   print(nvidia_smi_output)
 
 if __name__ == '__main__':
-  print_nvidia_smi()
+  img = best_centercrop_image(cv2_imread('/data/vision/torralba/movies_sfm/home/no_training_cnn/tests/dog.jpg'), 224, 224)
+  video = np.array([img for _ in range(10)])
+
+  imshow(video, title='video_test')
+
+  a = 1
+
   # gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)
   # print(gpus)
   # a = 1
