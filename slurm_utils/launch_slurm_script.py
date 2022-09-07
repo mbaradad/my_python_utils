@@ -24,6 +24,7 @@ parser.add_argument('--max-total-time-days', default=30, type=int, help='whether
 parser.add_argument('--max-runs', default=200, type=int, help='whether to test if the datasets have the expected number of files')
 parser.add_argument('--slurm-id', default=-1, type=int, help='id if the slurm script is already running. This will wait for the slurm with id to finish, and then execute the sript')
 parser.add_argument('--partition-8', action='store_true', help='whether to use partition 8 or the rest')
+parser.add_argument('--qos', type=int, choices=[0,1,2], default=2, help='whether to use partition 8 or the rest')
 
 def check_status(slurm_id, was_running):
   output = subprocess.run('sacct --format="User,JobID,JobName%30,Elapsed,State,NodeList" | grep -v TIMEOUT | grep mbaradad', shell=True, capture_output=True)
@@ -67,14 +68,20 @@ if __name__ == '__main__':
       if args.partition_8:
         commands.append("--partition=sched_system_all_8")
       #commands.append("--exclude=node0019")
-      # commands.append("--qos=sched_level_2")
+      if args.qos != 0:
+        commands.append("--qos=sched_level_{}".format(args.qos))
       commands.append(args.script)
       print(" ".join(commands))
 
       output = subprocess.run(commands, shell=False, capture_output=True)
       date_time = now.strftime("%m/%d/%Y, %H:%M:%S")
       print("Slurm job launched at:", date_time)
-      slurm_id = int(str(output.stdout).split(' job ')[-1].split('\\')[0])
+      try:
+        slurm_id_str = str(output.stdout).split(' job ')[-1]
+        slurm_id = int(slurm_id_str.split('\\')[0])
+      except:
+        print("Exception while getting slurmid, this happened in the past when launching from a compute node instead of the login node")
+        slurm_id = -1
     else:
       slurm_id = args.slurm_id
 
