@@ -114,7 +114,7 @@ def render_pointcloud(pcl, colors, K=None, valid_mask=None, debug=False, add_cam
   return frames
 
 if __name__ == '__main__':
-  toby_file = '/home/mbj_google_com/datasets/nerfies_outputs/toby-sit/0050.npz'
+  toby_file = '/data/vision/torralba/movies_sfm/projects/normals_acc/datasets/nerfies_outputs/toby-sit/0050.npz'
   toby_result = np.load(toby_file)
 
   depth = toby_result['depth']
