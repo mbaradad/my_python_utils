@@ -2184,7 +2184,6 @@ def pose_to_extrinsic(mat):
   return 1
 
 def subset_frames(get_dataset=False, fps=4):
-  from movies_data.datagenerators.movie_sequence_dataset import MovieSequenceDataset
   selected_movies = ['pulp_fiction_1994']
   selected_frames =[]
   #refered as indexes at 4 fps
