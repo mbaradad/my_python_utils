@@ -2,6 +2,9 @@ import numpy as np
 from math import sqrt
 import torch
 
+import sys
+from my_python_utils.common_utils import *
+
 '''
   From https://github.com/nghiaho12/rigid_transform_3D/blob/master/rigid_transform_3D.py
   
@@ -125,11 +128,6 @@ def rigid_transform_3D_np(A, B):
 
   return np.array(R), np.array(t)
 
-
-
-import sys
-from my_python_utils.common_utils import *
-
 def compute_normals_from_closest_image_coords(coords, mask=None):
     # TODO: maybe change cs to be [..., :-1,:-1] as it seems more intuitive
     assert coords.shape[1] == 3 and len(coords.shape) == 4
@@ -146,8 +144,8 @@ def compute_normals_from_closest_image_coords(coords, mask=None):
 
       n = torch.cross((ls - cs),(ts - cs), dim=1) * 1e10
 
-      # if normals appear incorrect, it may be becuase of the 1e-100, if the scale of the pcl is two small 1e-5,
-      # it was giving errors with a constant of 1e-20 (and it was replaced to 1e-100), we do this to avoid nans
+      # if normals appear incorrect, it may be becuase of the 1e-20, if the scale of the pcl is too small,
+      # it was giving errors with a constant of 1e-5 (and it was replaced to 1e-20). We also need an epsilon to avoid nans when using this function for training.
       n_norm = n/(torch.sqrt(torch.abs((n*n).sum(1) + 1e-20))[:,None,:,:])
     else:
       ts = np.concatenate((x_coords[:, None, :-1, 1:], y_coords[:, None, :-1, 1:], z_coords[:, None,:-1,1:]), axis=1)

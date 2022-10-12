@@ -555,7 +555,7 @@ def get_image_size_fast_png(file_path):
 
   return width, height
 
-def tile_images(imgs, tiles_x_y=None, tile_size_x_y=None, border_pixels=0, border_color=(0, 0, 0)):
+def tile_images(imgs, tiles_x_y=None, tile_size_x_y=None, border_pixels=0, border_color=(0, 0, 0), border_pixels_x_y=None):
   if tile_size_x_y is None:
     tile_size_y, tile_size_x = imgs[0].shape[-2:]
   else:
@@ -565,7 +565,15 @@ def tile_images(imgs, tiles_x_y=None, tile_size_x_y=None, border_pixels=0, borde
     n_tiles_y = n_tiles_x
   else:
     n_tiles_x, n_tiles_y = tiles_x_y
-  final_img = np.zeros((3, tile_size_y * n_tiles_y + border_pixels * (n_tiles_y - 1), tile_size_x * n_tiles_x + border_pixels * (n_tiles_x - 1)))
+  if border_pixels_x_y is None:
+    border_pixels_x = border_pixels_y = border_pixels
+  else:
+    assert len(border_pixels_x_y) == 2, "border_pixels_x_y should have length 2"
+    border_pixels_x, border_pixels_y = border_pixels_x_y
+
+  del border_pixels
+
+  final_img = np.zeros((3, tile_size_y * n_tiles_y + border_pixels_y * (n_tiles_y - 1), tile_size_x * n_tiles_x + border_pixels_x * (n_tiles_x - 1)))
   final_img += np.array(border_color)[:, None, None]
   n_imgs = len(imgs)
   k = 0
@@ -576,8 +584,8 @@ def tile_images(imgs, tiles_x_y=None, tile_size_x_y=None, border_pixels=0, borde
         tile = tile[None,:,:]
       if tile.shape[0] == 1:
         tile = np.concatenate((tile, tile, tile))
-      final_img[:, i*(tile_size_y + border_pixels):i*(tile_size_y + border_pixels) + tile_size_y,
-                   j*(tile_size_x + border_pixels):j*(tile_size_x + border_pixels) + tile_size_x] = tile
+      final_img[:, i*(tile_size_y + border_pixels_y):i*(tile_size_y + border_pixels_y) + tile_size_y,
+                   j*(tile_size_x + border_pixels_x):j*(tile_size_x + border_pixels_x) + tile_size_x] = tile
       k = k + 1
       if k >= n_imgs:
         break
