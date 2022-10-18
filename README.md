@@ -1,9 +1,10 @@
 # Install  
-To install the requirements and opencv, just do:
+To install the requirements and opencv + ffmpeg from conda, with:
 
 ```
 pip install -r requirements
 conda install -c conda-forge opencv
+conda install -c conda-forge ffmpeg
 ```
 
 For extra requirements (that are more strange and may be hard to find in some systems, like company clusters) install requirements_extra.txt. 

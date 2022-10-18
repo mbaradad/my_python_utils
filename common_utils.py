@@ -562,7 +562,9 @@ def tile_images(imgs, tiles_x_y=None, tile_size_x_y=None, border_pixels=0, borde
     tile_size_x, tile_size_y = tile_size_x_y
   if tiles_x_y is None:
     n_tiles_x = int(np.ceil(np.sqrt(len(imgs))))
-    n_tiles_y = n_tiles_x
+    # just so that they fit, no need to have a square grid
+    n_tiles_y = int(np.ceil(len(imgs) / n_tiles_x))
+    assert n_tiles_x * n_tiles_y >= len(imgs)
   else:
     n_tiles_x, n_tiles_y = tiles_x_y
   if border_pixels_x_y is None:
@@ -679,6 +681,13 @@ def str2bool(v):
     return False
   else:
     raise argparse.ArgumentTypeError('Boolean (yes, true, t, y or 1, lower or upper case) string expected.')
+
+def comma_separated_str_list(v):
+  if not type(v) is str:
+    raise argparse.ArgumentTypeError('Should be a string.')
+  else:
+    v = v.replace(' ', '')
+    return v.split(',')
 
 def add_line(im, origin_x_y, end_x_y, color=(255, 0, 0), width=0):
   im = Image.fromarray(im.transpose())
@@ -905,7 +914,11 @@ def preprocess_im_to_plot(im, normalize_image=True):
 
 def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True,
            max_batch_display=10, window=None, env=None, fps=10, vis=None,
-           add_ranges=False, return_image=False, add_axis=False, gif=False):
+           add_ranges=False, return_image=False, add_axis=False, gif=False, verbosity=0):
+  # If video generation fails, install ffmpeg with conda:
+  # https://anaconda.org/conda-forge/ffmpeg
+  # conda install -c conda-forge ffmpeg
+
   if env is None:
     env = PYCHARM_VISDOM
   if window is None:
@@ -930,7 +943,7 @@ def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True,
       window = title
     if len(im.shape) == 4:
       if not gif:
-        return vidshow_vis(im, title=title, window=window, env=env, vis=vis, biggest_dim=biggest_dim, fps=fps)
+        return vidshow_vis(im, title=title, window=window, env=env, vis=vis, biggest_dim=biggest_dim, fps=fps, verbosity=verbosity)
       else:
         temp_name = '{}/{}.gif'.format(tempfile._get_default_tempdir(), next(tempfile._get_candidate_names()))
         make_gif(im, path=temp_name, fps=fps, biggest_dim=biggest_dim)
@@ -2644,44 +2657,44 @@ def edges_image(img):
   sk_edges = feature.canny(gray, sigma=3) * 1.0
   return sk_edges
 
-def linear_plc_to_abs_plc(linear_plc):
-  assert len(linear_plc.shape) == 4
-  if not type(linear_plc) is torch.Tensor:
+def linear_pcl_to_abs_pcl(linear_pcl):
+  assert len(linear_pcl.shape) == 4
+  if not type(linear_pcl) is torch.Tensor:
     raise Exception('Only implemented for tocrch tensor')
-  return torch.abs(linear_plc)
+  return torch.abs(linear_pcl)
 
-def abs_plc_to_linear_plc(abs_plc):
-  assert len(abs_plc.shape) == 4
-  if not type(abs_plc) is torch.Tensor:
+def abs_pcl_to_linear_pcl(abs_pcl):
+  assert len(abs_pcl.shape) == 4
+  if not type(abs_pcl) is torch.Tensor:
     raise Exception('Only implemented for torch tensor')
-  height, width  = abs_plc.shape[2:]
+  height, width  = abs_pcl.shape[2:]
   mask = torch.FloatTensor(np.ones((1, 3, height, width)))
   mask[:, 0, :, :int(width/2)] = -1
   mask[:, 1, :int(height/2)] = -1
-  if abs_plc.is_cuda:
+  if abs_pcl.is_cuda:
     mask = mask.cuda()
-  plc = abs_plc*mask
-  return plc
+  pcl = abs_pcl * mask
+  return pcl
 
-def linear_plc_to_log_plc(linear_plc, zero_log_bias=0.01):
-  assert len(linear_plc.shape) == 4
-  if not type(linear_plc) is torch.Tensor:
+def linear_pcl_to_log_pcl(linear_pcl, zero_log_bias=0.01):
+  assert len(linear_pcl.shape) == 4
+  if not type(linear_pcl) is torch.Tensor:
     raise Exception('Only implemented for tocrch tensor')
-  return torch.log(torch.abs(linear_plc) + zero_log_bias)
+  return torch.log(torch.abs(linear_pcl) + zero_log_bias)
 
-def log_plc_to_linear_plc(log_plc, zero_log_bias=0.01):
-  assert len(log_plc.shape) == 4
-  if not type(log_plc) is torch.Tensor:
+def log_pcl_to_linear_pcl(log_pcl, zero_log_bias=0.01):
+  assert len(log_pcl.shape) == 4
+  if not type(log_pcl) is torch.Tensor:
     raise Exception('Only implemented for torch tensor')
-  plc = torch.exp(log_plc) - zero_log_bias
-  height, width  = plc.shape[2:]
+  pcl = torch.exp(log_pcl) - zero_log_bias
+  height, width  = pcl.shape[2:]
   mask = torch.FloatTensor(np.ones((1, 3, height, width)))
   mask[:, 0, :, :int(width/2)] = -1
   mask[:, 1, :int(height/2)] = -1
-  if plc.is_cuda:
+  if pcl.is_cuda:
     mask = mask.cuda()
-  plc = plc*mask
-  return plc
+  pcl = pcl * mask
+  return pcl
 
 
 def numpy_batch_mm(A, B):
@@ -2793,7 +2806,7 @@ class FixSampleDataset:
   def __init__(self, dataset, samples_to_fix = -1, replication_factor=-1):
     self.dataset = dataset
     self.replication_factor = replication_factor
-    if samples_to_fix == -1:
+    if type(samples_to_fix) is int and samples_to_fix == -1:
       # just get a random one
       self.fixed_samples = [self.dataset.__getitem__(np.random.randint(0, len(self.dataset)))]
     else:
@@ -2931,6 +2944,11 @@ def get_current_git_commit():
 
 
 if __name__ == '__main__':
+  images = np.random.uniform(0, 1, size=(50, 3, 128, 128))
+  imshow(images, title='random_video', verbosity=1)
+
+  imshow(tile_images(images, border_pixels=4), title='tiles_example')
+
   print_nvidia_smi()
   random.randint(1,3)
   # gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)
