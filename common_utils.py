@@ -562,7 +562,9 @@ def tile_images(imgs, tiles_x_y=None, tile_size_x_y=None, border_pixels=0, borde
     tile_size_x, tile_size_y = tile_size_x_y
   if tiles_x_y is None:
     n_tiles_x = int(np.ceil(np.sqrt(len(imgs))))
-    n_tiles_y = n_tiles_x
+    # just so that they fit, no need to have a square grid
+    n_tiles_y = int(np.ceil(len(imgs) / n_tiles_x))
+    assert n_tiles_x * n_tiles_y >= len(imgs)
   else:
     n_tiles_x, n_tiles_y = tiles_x_y
   final_img = np.zeros((3, tile_size_y * n_tiles_y + border_pixels * (n_tiles_y - 1), tile_size_x * n_tiles_x + border_pixels * (n_tiles_x - 1)))
@@ -2923,6 +2925,9 @@ def get_current_git_commit():
 
 
 if __name__ == '__main__':
+  images = np.random.uniform(0, 1, size=(50, 3, 128, 128))
+  imshow(tile_images(images, border_pixels=4), title='tiles_example')
+
   print_nvidia_smi()
   random.randint(1,3)
   # gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)
