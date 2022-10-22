@@ -9,7 +9,7 @@ if 'anaconda' in sys.executable:
   # set ffmpeg to anaconda path
   skvideo.setFFmpegPath(os.path.split(sys.executable)[0])
 else:
-  skvideo.setFFmpegPath('/usr/bin/')
+  skvideo.setFFmpegPath('/usr/bin')
 from skvideo.io import FFmpegWriter, FFmpegReader
 
 import tempfile
@@ -112,9 +112,11 @@ def vidshow_file_vis(videofile, title=None, window=None, env=None, vis=None, fps
   vis.video(videofile=videofile, win=window, opts=opts, env=env)
 
 class MyVideoWriter():
-  def __init__(self, file, fps=None, *args, **kwargs):
+  def __init__(self, file, fps=None, verbosity=0, *args, **kwargs):
     if not fps is None:
       kwargs['inputdict'] = {'-r': str(fps)}
+    kwargs['verbosity'] = verbosity
+    assert verbosity in range(2), "Verbosity should be between 0 or 1"
     self.video_writer = FFmpegWriter(file, *args, **kwargs)
 
   def writeFrame(self, im):
@@ -211,7 +213,7 @@ def vidshow_gif_path(gif_path, title=None, win=None, env=None, vis=None):
 
   return gif_path
 
-def vidshow_vis(frames, title=None, window=None, env=None, vis=None, biggest_dim=None, fps=10):
+def vidshow_vis(frames, title=None, window=None, env=None, vis=None, biggest_dim=None, fps=10, verbosity=0):
   # if it does not work, change the ffmpeg. It was failing using anaconda ffmpeg default video settings,
   # and was switched to the machine ffmpeg.
   if vis is None:
@@ -223,8 +225,11 @@ def vidshow_vis(frames, title=None, window=None, env=None, vis=None, biggest_dim
     frames = np.tile(frames, (1, 1, 1, 3))
   if not frames.dtype is np.uint8:
     frames = np.array(frames * 255, dtype='uint8')
-  videofile = '/tmp/%s.mp4' % next(tempfile._get_candidate_names())
-  writer = MyVideoWriter(videofile, inputdict={'-r': str(fps)})
+  # visdom available extensions/mimetypes
+  # mimetypes (audio) = {'wav': 'wav', 'mp3': 'mp3', 'ogg': 'ogg', 'flac': 'flac'}
+  # mimetypes (video) = {'mp4': 'mp4', 'ogv': 'ogg', 'avi': 'avi', 'webm': 'webm'}
+  videofile = '/tmp/%s.webm' % next(tempfile._get_candidate_names())
+  writer = MyVideoWriter(videofile, inputdict={'-r': str(fps)}, verbosity=verbosity)
   for i in range(frames.shape[0]):
     if biggest_dim is None:
       actual_frame = frames[i]
@@ -234,8 +239,10 @@ def vidshow_vis(frames, title=None, window=None, env=None, vis=None, biggest_dim
       writer.writeFrame(actual_frame)
     except Exception as e:
       print(e)
-      print("If this fails, copy paste the ffmpeg command, as probably there are system libraries that are not been properly installed")
+      print("If this fails, copy paste the ffmpeg command, by going into skvideo.io.ffmpeg.FFmpegWriter._createProcess"
+            "as probably there are system libraries that are not been properly installed, which can be installed through conda.")
       print("e.g. libopenh264.so.5: cannot open shared object file: No such file or directory")
+      print("Changing to .webm from .mp4 also helped one day that it was not working with a new conda install.")
   writer.close()
 
   os.chmod(videofile, 0o777)
