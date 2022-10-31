@@ -87,7 +87,7 @@ def scene_init(args):
         scene.camera_target = args.camera_target
         scene.up_vector = args.up
         scene.light = args.light or scene.camera_position
-        if args.depth:
+        if args.depths:
             H, W = args.orthographic_bounds
             scene.camera_matrix = Matrix44.orthogonal_projection(
                 left=-W/2, right=W/2,

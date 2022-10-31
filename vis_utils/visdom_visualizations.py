@@ -4,7 +4,6 @@ import skvideo
 import sys
 import os
 
-print(sys.executable)
 if 'anaconda' in sys.executable:
   # set ffmpeg to anaconda path
   skvideo.setFFmpegPath(os.path.split(sys.executable)[0])
