@@ -131,6 +131,7 @@ def rigid_transform_3D_np(A, B):
 def compute_normals_from_closest_image_coords(coords, mask=None):
     # TODO: maybe change cs to be [..., :-1,:-1] as it seems more intuitive
     assert coords.shape[1] == 3 and len(coords.shape) == 4
+    assert mask is None or len(mask.shape) == 4
     assert mask is None or (mask.shape[0] == coords.shape[0] and mask.shape[2:] == coords.shape[2:])
 
     x_coords = coords[:,0,:,:]
@@ -156,7 +157,6 @@ def compute_normals_from_closest_image_coords(coords, mask=None):
       n_norm = n/(np.sqrt(np.abs((n*n).sum(1) + 1e-20))[:,None,:,:])
 
     if not mask is None:
-      assert len(mask.shape) == 4
       valid_ts = mask[:,:, :-1, 1:]
       valid_ls = mask[:,:, 1:, :-1]
       valid_cs = mask[:,:, 1:, 1:]
