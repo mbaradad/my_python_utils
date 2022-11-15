@@ -40,7 +40,7 @@ if not 'NO_VISDOM' in os.environ.keys():
     if "VISDOM_HOST" in os.environ.keys():
       visdom_host = os.environ["VISDOM_HOST"]
     else:
-      visdom_host = 'visiongpu09'
+      visdom_host = 'visiongpu10'
     global_vis = instantiante_visdom(12890, server='http://' + visdom_host)
 
 
