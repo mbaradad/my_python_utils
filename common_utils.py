@@ -2504,11 +2504,12 @@ def np_to_variable(np_obj):
 def string_similarity(word0, word1):
   return difflib.SequenceMatcher(None, word0, word1).ratio()
 
-def find_closest_string(word, string_list):
+def find_closest_string(word, string_list, cutoff=0.6):
   try:
-    return difflib.get_close_matches(word, string_list)[0]
+    return difflib.get_close_matches(word, string_list, cutoff=cutoff)[0]
   except:
     return ''
+
 def generate_nice_palette(N_colors):
   palette = sns.color_palette(None, N_colors)
   return np.array(np.array(palette)*255.0, dtype='uint8')
