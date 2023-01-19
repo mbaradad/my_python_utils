@@ -618,7 +618,7 @@ def tile_images_pdf(imgs, pdf_output_file, tiles, tile_size, border_pixels=0, re
       cv2_imwrite(tile, tmp_filename)
       x = j * (tile_size_x + border_pixels)
       y = i * (tile_size_y + border_pixels)
-      pdf.image(tmp_filename, x, y, tile_size_x, tile_size_y)
+      pdf.image_path(tmp_filename, x, y, tile_size_x, tile_size_y)
       k = k + 1
       if k >= n_imgs:
         break
@@ -2186,12 +2186,15 @@ def tonumpy(tensor):
     tensor = tensor.cpu()
   return tensor.detach().numpy()
 
-def totorch(array):
+def totorch(array, device=None):
   if type(array) is torch.Tensor:
     return array
   if not type(array) is np.ndarray:
     array = np.array(array)
-  return torch.FloatTensor(array)
+  array = torch.FloatTensor(array)
+  if not device is None:
+    array = array.to(device)
+  return array
 
 def tovariable(array):
   if type(array) == np.ndarray:

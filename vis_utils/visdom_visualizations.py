@@ -40,7 +40,8 @@ if not 'NO_VISDOM' in os.environ.keys():
     if "VISDOM_HOST" in os.environ.keys():
       visdom_host = os.environ["VISDOM_HOST"]
     else:
-      visdom_host = 'visiongpu10'
+      print("Env variable VISDOM_HOST not found, will use localhost!")
+      visdom_host = 'localhost'
     global_vis = instantiante_visdom(12890, server='http://' + visdom_host)
 
 
