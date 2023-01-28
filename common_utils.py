@@ -618,7 +618,7 @@ def tile_images_pdf(imgs, pdf_output_file, tiles, tile_size, border_pixels=0, re
       cv2_imwrite(tile, tmp_filename)
       x = j * (tile_size_x + border_pixels)
       y = i * (tile_size_y + border_pixels)
-      pdf.image(tmp_filename, x, y, tile_size_x, tile_size_y)
+      pdf.image_path(tmp_filename, x, y, tile_size_x, tile_size_y)
       k = k + 1
       if k >= n_imgs:
         break
@@ -2186,12 +2186,15 @@ def tonumpy(tensor):
     tensor = tensor.cpu()
   return tensor.detach().numpy()
 
-def totorch(array):
+def totorch(array, device=None):
   if type(array) is torch.Tensor:
     return array
   if not type(array) is np.ndarray:
     array = np.array(array)
-  return torch.FloatTensor(array)
+  array = torch.FloatTensor(array)
+  if not device is None:
+    array = array.to(device)
+  return array
 
 def tovariable(array):
   if type(array) == np.ndarray:
@@ -2504,11 +2507,12 @@ def np_to_variable(np_obj):
 def string_similarity(word0, word1):
   return difflib.SequenceMatcher(None, word0, word1).ratio()
 
-def find_closest_string(word, string_list):
+def find_closest_string(word, string_list, cutoff=0.6):
   try:
-    return difflib.get_close_matches(word, string_list)[0]
+    return difflib.get_close_matches(word, string_list, cutoff=cutoff)[0]
   except:
     return ''
+
 def generate_nice_palette(N_colors):
   palette = sns.color_palette(None, N_colors)
   return np.array(np.array(palette)*255.0, dtype='uint8')
