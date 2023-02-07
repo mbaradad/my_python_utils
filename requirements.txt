@@ -3,7 +3,7 @@ scikit-video
 scikit-image
 imageio
 #for compatibility with low torch versions, that require PILLOW_VERSION
-Pillow==7.1.2
+Pillow==9.3.0
 plyfile
 multiprocess
 matplotlib
