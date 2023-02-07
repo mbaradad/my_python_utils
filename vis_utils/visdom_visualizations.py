@@ -172,8 +172,9 @@ class MyVideoReader():
   # encoded as apple ProRes mov
 # ffmpeg -i input.avi -c:v prores_ks -profile:v 3 -c:a pcm_s16le output.mov
 # https://video.stackexchange.com/questions/14712/how-to-encode-apple-prores-on-windows-or-linux
-def get_video_writer(videofile, fps=10, verbosity=0):
-  writer = MyVideoWriter(videofile + '.mov', verbosity=verbosity, inputdict={'-r': str(fps)},
+def get_video_writer(videofile, fps=10, verbosity=0, extension='mov'):
+  extension = extension.replace('.', '')
+  writer = MyVideoWriter(videofile + '.' + extension, verbosity=verbosity, inputdict={'-r': str(fps)},
                                                                   outputdict={
                                                                     '-c:v': 'prores_ks',
                                                                     '-profile:v': '3',
