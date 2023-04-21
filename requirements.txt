@@ -2,7 +2,8 @@ visdom
 scikit-video
 scikit-image
 imageio
-Pillow
+#for compatibility with low torch versions, that require PILLOW_VERSION
+Pillow==7.1.2
 plyfile
 multiprocess
 matplotlib
@@ -27,3 +28,4 @@ sorcery
 simple_3dviz
 dominate
 gitpython
+wandb
