@@ -31,7 +31,7 @@ import torch
 PYCHARM_VISDOM='PYCHARM_RUN'
 
 def instantiante_visdom(port, server='http://localhost'):
-  return visdom.Visdom(port=port, server=server, use_incoming_socket=True)
+  return visdom.Visdom(port=port, server=server, use_incoming_socket=True, raise_exceptions=False)
 
 if not 'NO_VISDOM' in os.environ.keys():
   with warnings.catch_warnings():
@@ -184,8 +184,7 @@ def get_video_writer(videofile, fps=10, verbosity=0, extension='mov'):
 
 def vidshow_gif_path(gif_path, title=None, win=None, env=None, vis=None):
   # as html base 64, as gif display is not implemented https://github.com/fossasia/visdom/issues/685
-  if vis is None:
-    vis = global_vis
+  win, title, vis = visdom_default_window_title_and_vis(win, title, vis)
   opts = dict()
   win, title, vis = visdom_default_window_title_and_vis(win, title, vis)
 

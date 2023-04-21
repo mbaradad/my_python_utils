@@ -15,7 +15,6 @@ import random
 def randint_replacement(*args, **kwargs): raise Exception("Don't use random.randint as it can sample high, use numpy.random.randint")
 random.randint = randint_replacement
 
-import seaborn as sns
 import torch
 from pathlib import Path
 import git
@@ -1559,11 +1558,21 @@ def show_pointcloud_errors(coords, errors, title='none', win=None, env=None, mar
 def prepare_pointclouds_and_colors(coords, colors, default_color=(0,0,0)):
   if type(coords) is list:
     coords = [k for k in coords]
-    colors = [k for k in colors]
+    if not colors is None:
+      colors = [k for k in colors]
+    processed_colors = None
     for k in range(len(coords)):
-      assert len(coords) == len(colors)
-      coords[k], colors[k] = prepare_single_pointcloud_and_colors(coords[k], colors[k], default_color)
-    return coords, colors
+      if not colors is None:
+        if processed_colors is None:
+          processed_colors = []
+        assert len(coords) == len(colors)
+        colors_to_proc = colors[k]
+      else:
+        colors_to_proc = None
+      coords[k], cur_colors = prepare_single_pointcloud_and_colors(coords[k], colors_to_proc, default_color)
+      if not colors is None:
+        processed_colors.append(cur_colors)
+    return coords, processed_colors
   else:
     return prepare_single_pointcloud_and_colors(coords, colors, default_color)
 
