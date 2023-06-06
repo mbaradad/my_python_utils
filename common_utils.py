@@ -2187,14 +2187,19 @@ def tonumpy(tensor):
     return np.array(tensor)
   if type(tensor) is np.ndarray:
     return tensor
-  if tensor.requires_grad:
-    tensor = tensor.detach()
-  if type(tensor) is torch.autograd.Variable:
-    tensor = tensor.data
-  if tensor.is_cuda:
-    tensor = tensor.cpu()
-  return tensor.detach().numpy()
-
+  else:
+    try:
+      if tensor.requires_grad:
+        tensor = tensor.detach()
+      if type(tensor) is torch.autograd.Variable:
+        tensor = tensor.data
+      if tensor.is_cuda:
+        tensor = tensor.cpu()
+      return tensor.detach().numpy()
+    except:
+      # try to cast still, for example if it's jax
+      return np.array(tensor)
+    
 def totorch(array, device=None):
   if type(array) is torch.Tensor:
     return array
@@ -2962,7 +2967,7 @@ if __name__ == '__main__':
 
   imshow(tile_images(images, border_pixels=4), title='tiles_example')
 
-  print_nvidia_smi()
+  # print_nvidia_smi()
   random.randint(1,3)
   # gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)
   # print(gpus)
