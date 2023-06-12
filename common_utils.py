@@ -12,6 +12,8 @@ except:
 
 import random
 
+
+
 def randint_replacement(*args, **kwargs): raise Exception("Don't use random.randint as it can sample high, use numpy.random.randint")
 random.randint = randint_replacement
 
@@ -26,7 +28,10 @@ except:
 import os
 # import cv2
 
-import seaborn as sns
+try:
+  import seaborn as sns
+except Exception as e:
+  print("Failed to import seaborn. Probably requirements_extra from common_utils were not installed!")
 
 import glob
 import shutil
@@ -1071,8 +1076,11 @@ def generate_bbox_coords(min_corner, max_corner, use_max_distance=True):
   return bbox_coords
 
 
-default_side_colors = np.array(sns.color_palette("hls", 12)) * 255.0
-default_corner_colors = (np.array(sns.color_palette("hls", 8)) * 255.0).transpose()
+try:
+  default_side_colors = np.array(sns.color_palette("hls", 12)) * 255.0
+  default_corner_colors = (np.array(sns.color_palette("hls", 8)) * 255.0).transpose()
+except:
+  pass
 
 def create_bbox_sides_and_corner_coords(min_corner, max_corner, bbox_center, bbox_rotation_matrix, coords_per_side = 1000, color=None):
   all_coords = list()
