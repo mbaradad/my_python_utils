@@ -1,5 +1,5 @@
 visdom
-scikit-video
+scikit-video==0.1.2
 scikit-image
 imageio
 plyfile
