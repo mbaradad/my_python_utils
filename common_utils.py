@@ -10,8 +10,8 @@ except:
   # print("Failed to import some optional packages from my_python_utils, some plotting/visualization functions may fail!")
   pass
 
+import cv2
 import random
-
 
 
 def randint_replacement(*args, **kwargs): raise Exception("Don't use random.randint as it can sample high, use numpy.random.randint")
@@ -26,7 +26,6 @@ try:
 except:
   import _pickle as pickle
 import os
-# import cv2
 
 try:
   import seaborn as sns
