@@ -1,6 +1,7 @@
 visdom
-scikit-video==0.1.2
+scikit-video #==0.1.2
 scikit-image
+scikit-learn
 imageio
 plyfile
 multiprocess
@@ -28,7 +29,7 @@ seaborn
 
 #for compatibility with low torch versions, that require PILLOW_VERSION
 Pillow==7.1.2
-scipy==1.6.0
+# scipy==1.6.0
 # the next of the packages oftentimes interfer with per project torch/numpy's..., 
 # so we keep them as optional. To install them, go to requirement_extra.txt
 # kornia
