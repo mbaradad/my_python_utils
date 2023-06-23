@@ -2967,6 +2967,11 @@ def get_current_git_commit():
   repo = git.Repo(search_parent_directories=True)
   sha = repo.head.object.hexsha
 
+def get_freer_gpu():
+    os.system('nvidia-smi -q -d Memory |grep -A6 GPU|grep Free >tmp')
+    memory_available = [int(x.split()[2]) for x in open('tmp', 'r').readlines()]
+    return np.argmax(memory_available)
+
 
 if __name__ == '__main__':
   images = np.random.uniform(0, 1, size=(50, 3, 128, 128))
