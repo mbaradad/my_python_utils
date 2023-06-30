@@ -1561,7 +1561,7 @@ def show_pointcloud_errors(coords, errors, title='none', win=None, env=None, mar
                       force_aspect_ratio=force_aspect_ratio, valid_mask=valid_mask, nice_plot_rotation=nice_plot_rotation, labels=labels)
 
 
-def prepare_pointclouds_and_colors(coords, colors, default_color=(0,0,0)):
+def prepare_pointclouds_and_colors(coords, colors, default_color=(0,0,0), max_points=-1):
   if type(coords) is list:
     coords = [k for k in coords]
     if not colors is None:
@@ -1576,7 +1576,14 @@ def prepare_pointclouds_and_colors(coords, colors, default_color=(0,0,0)):
       else:
         colors_to_proc = None
       coords[k], cur_colors = prepare_single_pointcloud_and_colors(coords[k], colors_to_proc, default_color)
+      if max_points > 0 and len(coords) > max_points:
+        points_selection = random.sample(range(coords[k].shape[0]), max_points)
+        coords[k] = coords[k][points_selection]
+      else:
+        points_selection = None
       if not colors is None:
+        if not points_selection is None:
+          cur_colors = cur_colors[points_selection]
         processed_colors.append(cur_colors)
     return coords, processed_colors
   else:
@@ -1634,7 +1641,7 @@ def show_pointcloud(original_coords, original_colors=None, title='none', win=Non
   if env is None:
     env = PYCHARM_VISDOM
   assert projection in ["perspective", "orthographic"]
-  coords, colors = prepare_pointclouds_and_colors(original_coords, original_colors, default_color)
+  coords, colors = prepare_pointclouds_and_colors(original_coords, original_colors, default_color, max_points=max_points)
   if not type(coords) is list:
     coords = [coords]
     colors = [colors]
