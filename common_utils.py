@@ -40,7 +40,10 @@ import sys
 import warnings
 import random
 import argparse
-import matplotlib
+try:
+  import matplotlib
+except:
+  pass
 from tqdm import tqdm
 
 from scipy import misc as scipy_misc
@@ -67,7 +70,6 @@ import socket
 
 # other utils
 from my_python_utils.vis_utils.visdom_visualizations import *
-from my_python_utils.flow_utils.flowlib import *
 from my_python_utils.logging_utils import *
 
 from sklearn.manifold import TSNE
@@ -271,10 +273,13 @@ def tensor2array(tensor, max_value=255, colormap='rainbow'):
 def is_headed_execution():
   #if there is a display, we are running locally
   return 'DISPLAY' in os.environ.keys()
-if not is_headed_execution():
-  with warnings.catch_warnings():
-    warnings.simplefilter("ignore")
-    matplotlib.use('Agg')
+try:
+  if not is_headed_execution():
+    with warnings.catch_warnings():
+      warnings.simplefilter("ignore")
+      matplotlib.use('Agg')
+except:
+  pass 
 
 def chunk_list(seq, n_chunks):
   avg = len(seq) / float(n_chunks)
@@ -1819,8 +1824,9 @@ def print_float(number):
 def imshow_matplotlib(im, path):
   imwrite(path,np.transpose(im, (1, 2, 0)))
 
-import matplotlib.pyplot as pyplt
+
 def all_labels(array, nbins=20, legend=None):
+  import matplotlib.pyplot as pyplt
   if type(array) == list:
     array = np.asarray(array)
   else:
