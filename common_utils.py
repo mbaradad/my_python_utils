@@ -102,6 +102,7 @@ class AttrDict(dict):
 # to do with no_context:, to keep syntax but remove the effect while debugging
 # for example with torch.no_grad() -> with no_context():
 no_context = contextlib.suppress
+empty_context = contextlib.suppress
 
 def get_hostname():
   return socket.gethostname()
