@@ -54,6 +54,7 @@ from scipy.ndimage.filters import gaussian_filter
 from multiprocessing.pool import ThreadPool
 
 import imageio
+import re
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -2985,7 +2986,27 @@ def get_freer_gpu():
     memory_available = [int(x.split()[2]) for x in open('tmp', 'r').readlines()]
     return np.argmax(memory_available)
 
+def sort_files_by_number(files):
+    # Define a custom sorting function that extracts the first integer from the file path
+    def sort_key(file_path):
+        match = re.search(r'\d+', file_path.split('/')[-1])
+        return int(match.group()) if match else 0
 
+    return sorted(files, key=sort_key)
+
+def add_frame_counter(frames, color=(255,0,0)):
+    assert type(frames) is list and all(frame.shape[0] == 3 and frame.dtype == np.uint8 for frame in frames)
+    
+    for i, frame in enumerate(frames):
+        frame = frame.transpose(1, 2, 0)  # Convert to shape (height, width, 3)
+        H, W, _ = frame.shape
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        text = str(i)
+        frame = cv2.putText(np.ascontiguousarray(frame), text, (W // 10, H // 10), font, 1, color, 2)
+        frames[i] = frame.transpose(2, 0, 1)  # Convert back to shape (3, height, width)
+    return frames
+        
+  
 if __name__ == '__main__':
   images = np.random.uniform(0, 1, size=(50, 3, 128, 128))
   imshow(images, title='random_video', verbosity=1)
