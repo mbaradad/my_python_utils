@@ -28,7 +28,7 @@ pandas==1.1.4
 seaborn
 
 #for compatibility with low torch versions, that require PILLOW_VERSION
-Pillow==7.1.2
+Pillow
 # scipy==1.6.0
 # the next of the packages oftentimes interfer with per project torch/numpy's..., 
 # so we keep them as optional. To install them, go to requirement_extra.txt
