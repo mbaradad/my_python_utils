@@ -2552,6 +2552,26 @@ def generate_nice_palette(N_colors):
   palette = sns.color_palette(None, N_colors)
   return np.array(np.array(palette)*255.0, dtype='uint8')
 
+import numpy as np
+import colorsys
+
+def generate_nice_palette_colorsys(N_colors):
+    hues = np.linspace(0, 1, N_colors, endpoint=False)
+    palette = []
+    
+    for i in range(N_colors):
+        hue = hues[i]
+        saturation = 0.9 if i % 2 == 0 else 0.6
+        value = 0.8 if i % 4 < 2 else 0.6
+        rgb = colorsys.hsv_to_rgb(hue, saturation, value)
+        palette.append(rgb)
+
+    # Randomize the palette
+    random.shuffle(palette)
+
+    return np.array(np.array(palette) * 255.0, dtype='uint8')
+
+
 
 def generate_random_palette(n, seed=-1):
   import random
