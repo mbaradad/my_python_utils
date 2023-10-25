@@ -450,10 +450,10 @@ def visdom_line(Ys, X=None, names=None, env=None, win=None, title=None, vis=None
     opt['title'] = title
   if type(Ys) is list:
     Ys = np.array(Ys)
-    Ys = Ys.transpose()
+    Ys = tonumpy(Ys).transpose()
   else:
     # inner dimension is the data, but visdom expects the opposite
-    Ys = Ys.transpose()
+    Ys = tonumpy(Ys).transpose()
   if type(X) is list:
     Xs = np.array(X)
   if len(Ys.shape) == 2:
