@@ -26,11 +26,6 @@ except:
   import _pickle as pickle
 import os
 
-try:
-  import seaborn as sns
-except Exception as e:
-  print("Failed to import seaborn. Probably requirements_extra from common_utils were not installed!")
-
 import glob
 import shutil
 import time
@@ -339,7 +334,6 @@ def im_to_bw(image):
   gray = cv2.cvtColor(image.transpose((1,2,0)), cv2.COLOR_BGR2GRAY)
 
   return gray
-
 
 def load_image_tile(filename, top, bottom, left, right, dtype='uint8'):
   #img = pyvips.Image.new_from_file(filename, access='sequential')
@@ -1082,8 +1076,8 @@ def generate_bbox_coords(min_corner, max_corner, use_max_distance=True):
 
 
 try:
-  default_side_colors = np.array(sns.color_palette("hls", 12)) * 255.0
-  default_corner_colors = (np.array(sns.color_palette("hls", 8)) * 255.0).transpose()
+  default_side_colors = generate_nice_palette_hardoced(12)
+  default_corner_colors = generate_nice_palette_hardoced(8).transpose()
 except:
   pass
 
@@ -2548,9 +2542,27 @@ def find_closest_string(word, string_list, cutoff=0.6):
   except:
     return ''
 
+# from seaborn, to avoid the import which takes lots of time and is
+# not compatible with new versions of matplotlib
+
+def generate_nice_palette_hardcoded(N_colors):
+  hardcoded_colors = np.array([[ 31, 119, 180],
+                               [255, 127,  14],
+                               [ 44, 160,  44],
+                               [214,  39,  40],
+                               [148, 103, 189],
+                               [140,  86,  75],
+                               [227, 119, 194],
+                               [127, 127, 127],
+                               [188, 189,  34],
+                               [ 23, 190, 207]], dtype='uint8')
+  if N_colors > len(hardcoded_colors):
+    # repeat as many times as necessary
+    hardcoded_colors = np.tile(hardcoded_colors,(N_colors // len(hardcoded_colors) + 1,1))
+  return hardcoded_colors[:N_colors]
+
 def generate_nice_palette(N_colors):
-  palette = sns.color_palette(None, N_colors)
-  return np.array(np.array(palette)*255.0, dtype='uint8')
+  generate_nice_palette_hardcoded(N_colors)
 
 import numpy as np
 import colorsys
