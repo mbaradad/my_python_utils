@@ -31,7 +31,7 @@ import torch
 PYCHARM_VISDOM='PYCHARM_RUN'
 
 def instantiante_visdom(port, server='http://localhost'):
-  return visdom.Visdom(port=port, server=server, use_incoming_socket=True)
+  return visdom.Visdom(port=port, server=server, use_incoming_socket=True, raise_exceptions=False)
 
 if not 'NO_VISDOM' in os.environ.keys():
   with warnings.catch_warnings():
@@ -172,8 +172,9 @@ class MyVideoReader():
   # encoded as apple ProRes mov
 # ffmpeg -i input.avi -c:v prores_ks -profile:v 3 -c:a pcm_s16le output.mov
 # https://video.stackexchange.com/questions/14712/how-to-encode-apple-prores-on-windows-or-linux
-def get_video_writer(videofile, fps=10, verbosity=0):
-  writer = MyVideoWriter(videofile + '.mov', verbosity=verbosity, inputdict={'-r': str(fps)},
+def get_video_writer(videofile, fps=10, verbosity=0, extension='mov'):
+  extension = extension.replace('.', '')
+  writer = MyVideoWriter(videofile + '.' + extension, verbosity=verbosity, inputdict={'-r': str(fps)},
                                                                   outputdict={
                                                                     '-c:v': 'prores_ks',
                                                                     '-profile:v': '3',
@@ -183,8 +184,7 @@ def get_video_writer(videofile, fps=10, verbosity=0):
 
 def vidshow_gif_path(gif_path, title=None, win=None, env=None, vis=None):
   # as html base 64, as gif display is not implemented https://github.com/fossasia/visdom/issues/685
-  if vis is None:
-    vis = global_vis
+  win, title, vis = visdom_default_window_title_and_vis(win, title, vis)
   opts = dict()
   win, title, vis = visdom_default_window_title_and_vis(win, title, vis)
 
@@ -228,7 +228,7 @@ def vidshow_vis(frames, title=None, window=None, env=None, vis=None, biggest_dim
   # visdom available extensions/mimetypes
   # mimetypes (audio) = {'wav': 'wav', 'mp3': 'mp3', 'ogg': 'ogg', 'flac': 'flac'}
   # mimetypes (video) = {'mp4': 'mp4', 'ogv': 'ogg', 'avi': 'avi', 'webm': 'webm'}
-  videofile = '/tmp/%s.webm' % next(tempfile._get_candidate_names())
+  videofile = '/tmp/%s.mp4' % next(tempfile._get_candidate_names())
   writer = MyVideoWriter(videofile, inputdict={'-r': str(fps)}, verbosity=verbosity)
   for i in range(frames.shape[0]):
     if biggest_dim is None:
@@ -239,7 +239,7 @@ def vidshow_vis(frames, title=None, window=None, env=None, vis=None, biggest_dim
       writer.writeFrame(actual_frame)
     except Exception as e:
       print(e)
-      print("If this fails, copy paste the ffmpeg command, by going into skvideo.io.ffmpeg.FFmpegWriter._createProcess"
+      print("If this fails, copy paste the ffmpeg command, by going into skvideo.io.ffmpeg.FFmpegWriter._createProcess "
             "as probably there are system libraries that are not been properly installed, which can be installed through conda.")
       print("e.g. libopenh264.so.5: cannot open shared object file: No such file or directory")
       print("Changing to .webm from .mp4 also helped one day that it was not working with a new conda install.")

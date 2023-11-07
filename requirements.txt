@@ -1,12 +1,11 @@
 visdom
-scikit-video
+scikit-video #==0.1.2
 scikit-image
+scikit-learn
 imageio
-Pillow
 plyfile
 multiprocess
 matplotlib
-scipy
 plotly
 pyyaml
 path.py
@@ -14,16 +13,24 @@ blessings
 progressbar
 pysrt
 pathos
-librosa
 tqdm
-kornia
 pypng
 GPUtil
 p_tqdm
 nbconvert
 plotly
-seaborn
 sorcery
 simple_3dviz
 dominate
 gitpython
+wandb
+pandas==1.1.4
+
+#for compatibility with low torch versions, that require PILLOW_VERSION
+Pillow
+# scipy==1.6.0
+# the next of the packages oftentimes interfer with per project torch/numpy's..., 
+# so we keep them as optional. To install them, go to requirement_extra.txt
+# kornia
+# seaborn
+# librosa

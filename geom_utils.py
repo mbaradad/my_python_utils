@@ -337,8 +337,8 @@ def rotation_matrix_two_vectors(vector_from, vector_to):
 
 
 if __name__ == '__main__':
-  N = 30
-  A = np.random.normal(0,1,(3, N))
+  N_cameras = 30
+  A = np.random.normal(0, 1, (3, N_cameras))
   R = zrotation_deg(50) @ yrotation_deg(50) @ xrotation_deg(60)
   t = np.random.normal(0,1,3)
   B = R @ A + t[:,None]
@@ -352,16 +352,16 @@ if __name__ == '__main__':
 
   '''
 
-  R_torch, t_torch = rigid_transform_3D_batched(totorch(A)[None], totorch(B)[None], mask=np.ones((1, N)))
+  R_torch, t_torch = rigid_transform_3D_batched(totorch(A)[None], totorch(B)[None], mask=np.ones((1, N_cameras)))
   A_after_torch_aligning = (tonumpy(R_torch) @ A + tonumpy(t_torch)[:,:,None])[0]
-  show_pointcloud([A_after_torch_aligning.transpose(),B.transpose()],[np.array([(255,0,0)]*N),np.array([(0,255,0)]*N)], title='after_torch_aligning')
+  show_pointcloud([A_after_torch_aligning.transpose(),B.transpose()], [np.array([(255,0,0)] * N_cameras), np.array([(0, 255, 0)] * N_cameras)], title='after_torch_aligning')
 
 
   BS = 10
-  N_valid = N // 2
+  N_valid = N_cameras // 2
   multi_A = torch.tile(totorch(A)[None], (BS,1,1))
   multi_B = torch.tile(totorch(B)[None], (BS,1,1))
-  padded_mask = np.ones((BS, N), dtype='uint8')
+  padded_mask = np.ones((BS, N_cameras), dtype='uint8')
   padded_mask[:,N_valid:] = 0
   R_torch, t_torch = rigid_transform_3D_batched(multi_A, multi_B, mask=padded_mask)
 

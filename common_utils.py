@@ -10,12 +10,12 @@ except:
   # print("Failed to import some optional packages from my_python_utils, some plotting/visualization functions may fail!")
   pass
 
+import cv2
 import random
 
 def randint_replacement(*args, **kwargs): raise Exception("Don't use random.randint as it can sample high, use numpy.random.randint")
 random.randint = randint_replacement
 
-import seaborn as sns
 import torch
 from pathlib import Path
 import git
@@ -25,9 +25,6 @@ try:
 except:
   import _pickle as pickle
 import os
-# import cv2
-
-import seaborn as sns
 
 import glob
 import shutil
@@ -38,7 +35,10 @@ import sys
 import warnings
 import random
 import argparse
-import matplotlib
+try:
+  import matplotlib
+except:
+  pass
 from tqdm import tqdm
 
 from scipy import misc as scipy_misc
@@ -49,6 +49,7 @@ from scipy.ndimage.filters import gaussian_filter
 from multiprocessing.pool import ThreadPool
 
 import imageio
+import re
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -65,7 +66,6 @@ import socket
 
 # other utils
 from my_python_utils.vis_utils.visdom_visualizations import *
-from my_python_utils.flow_utils.flowlib import *
 from my_python_utils.logging_utils import *
 
 from sklearn.manifold import TSNE
@@ -98,6 +98,7 @@ class AttrDict(dict):
 # to do with no_context:, to keep syntax but remove the effect while debugging
 # for example with torch.no_grad() -> with no_context():
 no_context = contextlib.suppress
+empty_context = contextlib.suppress
 
 def get_hostname():
   return socket.gethostname()
@@ -269,10 +270,13 @@ def tensor2array(tensor, max_value=255, colormap='rainbow'):
 def is_headed_execution():
   #if there is a display, we are running locally
   return 'DISPLAY' in os.environ.keys()
-if not is_headed_execution():
-  with warnings.catch_warnings():
-    warnings.simplefilter("ignore")
-    matplotlib.use('Agg')
+try:
+  if not is_headed_execution():
+    with warnings.catch_warnings():
+      warnings.simplefilter("ignore")
+      matplotlib.use('Agg')
+except:
+  pass
 
 def chunk_list(seq, n_chunks):
   avg = len(seq) / float(n_chunks)
@@ -330,7 +334,6 @@ def im_to_bw(image):
   gray = cv2.cvtColor(image.transpose((1,2,0)), cv2.COLOR_BGR2GRAY)
 
   return gray
-
 
 def load_image_tile(filename, top, bottom, left, right, dtype='uint8'):
   #img = pyvips.Image.new_from_file(filename, access='sequential')
@@ -441,10 +444,10 @@ def visdom_line(Ys, X=None, names=None, env=None, win=None, title=None, vis=None
     opt['title'] = title
   if type(Ys) is list:
     Ys = np.array(Ys)
-    Ys = Ys.transpose()
+    Ys = tonumpy(Ys).transpose()
   else:
     # inner dimension is the data, but visdom expects the opposite
-    Ys = Ys.transpose()
+    Ys = tonumpy(Ys).transpose()
   if type(X) is list:
     Xs = np.array(X)
   if len(Ys.shape) == 2:
@@ -1072,8 +1075,11 @@ def generate_bbox_coords(min_corner, max_corner, use_max_distance=True):
   return bbox_coords
 
 
-default_side_colors = np.array(sns.color_palette("hls", 12)) * 255.0
-default_corner_colors = (np.array(sns.color_palette("hls", 8)) * 255.0).transpose()
+try:
+  default_side_colors = generate_nice_palette_hardoced(12)
+  default_corner_colors = generate_nice_palette_hardoced(8).transpose()
+except:
+  pass
 
 def create_bbox_sides_and_corner_coords(min_corner, max_corner, bbox_center, bbox_rotation_matrix, coords_per_side = 1000, color=None):
   all_coords = list()
@@ -1556,14 +1562,31 @@ def show_pointcloud_errors(coords, errors, title='none', win=None, env=None, mar
                       force_aspect_ratio=force_aspect_ratio, valid_mask=valid_mask, nice_plot_rotation=nice_plot_rotation, labels=labels)
 
 
-def prepare_pointclouds_and_colors(coords, colors, default_color=(0,0,0)):
+def prepare_pointclouds_and_colors(coords, colors, default_color=(0,0,0), max_points=-1):
   if type(coords) is list:
     coords = [k for k in coords]
-    colors = [k for k in colors]
+    if not colors is None:
+      colors = [k for k in colors]
+    processed_colors = None
     for k in range(len(coords)):
-      assert len(coords) == len(colors)
-      coords[k], colors[k] = prepare_single_pointcloud_and_colors(coords[k], colors[k], default_color)
-    return coords, colors
+      if not colors is None:
+        if processed_colors is None:
+          processed_colors = []
+        assert len(coords) == len(colors)
+        colors_to_proc = colors[k]
+      else:
+        colors_to_proc = None
+      coords[k], cur_colors = prepare_single_pointcloud_and_colors(coords[k], colors_to_proc, default_color)
+      if max_points > 0 and len(coords) > max_points:
+        points_selection = random.sample(range(coords[k].shape[0]), max_points)
+        coords[k] = coords[k][points_selection]
+      else:
+        points_selection = None
+      if not colors is None:
+        if not points_selection is None:
+          cur_colors = cur_colors[points_selection]
+        processed_colors.append(cur_colors)
+    return coords, processed_colors
   else:
     return prepare_single_pointcloud_and_colors(coords, colors, default_color)
 
@@ -1619,7 +1642,7 @@ def show_pointcloud(original_coords, original_colors=None, title='none', win=Non
   if env is None:
     env = PYCHARM_VISDOM
   assert projection in ["perspective", "orthographic"]
-  coords, colors = prepare_pointclouds_and_colors(original_coords, original_colors, default_color)
+  coords, colors = prepare_pointclouds_and_colors(original_coords, original_colors, default_color, max_points=max_points)
   if not type(coords) is list:
     coords = [coords]
     colors = [colors]
@@ -1797,8 +1820,9 @@ def print_float(number):
 def imshow_matplotlib(im, path):
   imwrite(path,np.transpose(im, (1, 2, 0)))
 
-import matplotlib.pyplot as pyplt
+
 def all_labels(array, nbins=20, legend=None):
+  import matplotlib.pyplot as pyplt
   if type(array) == list:
     array = np.asarray(array)
   else:
@@ -2178,13 +2202,18 @@ def tonumpy(tensor):
     return np.array(tensor)
   if type(tensor) is np.ndarray:
     return tensor
-  if tensor.requires_grad:
-    tensor = tensor.detach()
-  if type(tensor) is torch.autograd.Variable:
-    tensor = tensor.data
-  if tensor.is_cuda:
-    tensor = tensor.cpu()
-  return tensor.detach().numpy()
+  else:
+    try:
+      if tensor.requires_grad:
+        tensor = tensor.detach()
+      if type(tensor) is torch.autograd.Variable:
+        tensor = tensor.data
+      if tensor.is_cuda:
+        tensor = tensor.cpu()
+      return tensor.detach().numpy()
+    except:
+      # try to cast still, for example if it's jax
+      return np.array(tensor)
 
 def totorch(array, device=None):
   if type(array) is torch.Tensor:
@@ -2513,9 +2542,47 @@ def find_closest_string(word, string_list, cutoff=0.6):
   except:
     return ''
 
+# from seaborn, to avoid the import which takes lots of time and is
+# not compatible with new versions of matplotlib
+
+def generate_nice_palette_hardcoded(N_colors):
+  hardcoded_colors = np.array([[ 31, 119, 180],
+                               [255, 127,  14],
+                               [ 44, 160,  44],
+                               [214,  39,  40],
+                               [148, 103, 189],
+                               [140,  86,  75],
+                               [227, 119, 194],
+                               [127, 127, 127],
+                               [188, 189,  34],
+                               [ 23, 190, 207]], dtype='uint8')
+  if N_colors > len(hardcoded_colors):
+    # repeat as many times as necessary
+    hardcoded_colors = np.tile(hardcoded_colors,(N_colors // len(hardcoded_colors) + 1,1))
+  return hardcoded_colors[:N_colors]
+
 def generate_nice_palette(N_colors):
-  palette = sns.color_palette(None, N_colors)
-  return np.array(np.array(palette)*255.0, dtype='uint8')
+  generate_nice_palette_hardcoded(N_colors)
+
+import numpy as np
+import colorsys
+
+def generate_nice_palette_colorsys(N_colors):
+    hues = np.linspace(0, 1, N_colors, endpoint=False)
+    palette = []
+
+    for i in range(N_colors):
+        hue = hues[i]
+        saturation = 0.9 if i % 2 == 0 else 0.6
+        value = 0.8 if i % 4 < 2 else 0.6
+        rgb = colorsys.hsv_to_rgb(hue, saturation, value)
+        palette.append(rgb)
+
+    # Randomize the palette
+    random.shuffle(palette)
+
+    return np.array(np.array(palette) * 255.0, dtype='uint8')
+
 
 
 def generate_random_palette(n, seed=-1):
@@ -2958,13 +3025,39 @@ def get_file_timestamp(file, as_string=False):
 def timestamp_to_string(c_timestamp):
   return datetime.datetime.fromtimestamp(c_timestamp)
 
+def get_freer_gpu():
+    os.system('nvidia-smi -q -d Memory |grep -A6 GPU|grep Free >tmp')
+    memory_available = [int(x.split()[2]) for x in open('tmp', 'r').readlines()]
+    return np.argmax(memory_available)
+
+def sort_files_by_number(files):
+    # Define a custom sorting function that extracts the first integer from the file path
+    def sort_key(file_path):
+        match = re.search(r'\d+', file_path.split('/')[-1])
+        return int(match.group()) if match else 0
+
+    return sorted(files, key=sort_key)
+
+def add_frame_counter(frames, color=(255,0,0)):
+    assert type(frames) is list and all(frame.shape[0] == 3 and frame.dtype == np.uint8 for frame in frames)
+
+    for i, frame in enumerate(frames):
+        frame = frame.transpose(1, 2, 0)  # Convert to shape (height, width, 3)
+        H, W, _ = frame.shape
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        text = str(i)
+        frame = cv2.putText(np.ascontiguousarray(frame), text, (W // 10, H // 10), font, 1, color, 2)
+        frames[i] = frame.transpose(2, 0, 1)  # Convert back to shape (3, height, width)
+    return frames
+
+
 if __name__ == '__main__':
   images = np.random.uniform(0, 1, size=(50, 3, 128, 128))
   imshow(images, title='random_video', verbosity=1)
 
   imshow(tile_images(images, border_pixels=4), title='tiles_example')
 
-  print_nvidia_smi()
+  # print_nvidia_smi()
   random.randint(1,3)
   # gpus = get_gpu_stats(counts=10, desired_time_diffs_ms=0)
   # print(gpus)
