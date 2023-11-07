@@ -2809,6 +2809,7 @@ def bb_intersection_over_union(boxA, boxB):
 class FixSampleDataset:
   def __init__(self, dataset, samples_to_fix = -1, replication_factor=-1):
     self.dataset = dataset
+    assert not type(dataset) is FixSampleDataset, "You are calling FixSampleDataset on a FixSampleDataset!"
     self.replication_factor = replication_factor
     if type(samples_to_fix) is int and samples_to_fix == -1:
       # just get a random one
@@ -2827,8 +2828,10 @@ class FixSampleDataset:
   def set_replication_factor(self, replication_factor):
     self.replication_factor = replication_factor
 
-  def __getattr__(self, item):
-    return getattr(self.dataset, item)
+  # was producing recursive call error
+  #def __getattr__(self, item):
+  #  assert not type(self.dataset) is FixSampleDataset, "You are calling FixSampleDataset on a FixSampleDataset!"
+  #  return getattr(self.dataset, item)
 
   def __getitem__(self, item):
     item = np.random.randint(0, len(self.fixed_samples))
@@ -2946,6 +2949,14 @@ def get_current_git_commit():
   repo = git.Repo(search_parent_directories=True)
   sha = repo.head.object.hexsha
 
+def get_file_timestamp(file, as_string=False):
+  c_timestamp = os.path.getmtime(file)
+  if as_string:
+    return timestamp_to_string(c_timestamp)
+  return c_timestamp
+
+def timestamp_to_string(c_timestamp):
+  return datetime.datetime.fromtimestamp(c_timestamp)
 
 if __name__ == '__main__':
   images = np.random.uniform(0, 1, size=(50, 3, 128, 128))
