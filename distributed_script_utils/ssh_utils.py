@@ -48,9 +48,13 @@ antonio_hosts = ['visiongpu03',
                  'visiongpu37',
                  'visiongpu38',
                  'visiongpu39',
-                 'visiongpu49']
+                 'visiongpu49',
+                 'visiongpu58',
+                 'visiongpu59',
+                 'visiongpu60',
+                 'visiongpu61']
 
-all_hosts = ["visiongpu{}".format(str(k).zfill(2)) for k in range(3, 55)]
+all_hosts = ["visiongpu{}".format(str(k).zfill(2)) for k in range(3, 62)]
 port = 22
 username = "mbaradad"
 if not 'SSH_PASSWORD' in os.environ.keys():
@@ -66,6 +70,8 @@ def run_script_on_machines(get_gpu_stats_script, hosts, parallel=True, print_out
       ssh = paramiko.SSHClient()
       ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
       try:
+          if debug:
+            print("ssh to host: " + host + "")
           ssh.connect(host, port, username, password, timeout=2)
 
           stdin, stdout, stderr = ssh.exec_command(command)
@@ -106,7 +112,7 @@ if __name__ == "__main__":
 
   get_running_process_script = config_script + \
     """
-    ps aux | grep python | grep mbaradad | grep activations
+    ps aux | grep mbaradad | grep controlnet | grep -v grep
     """
 
   kill_process_script = config_script + \
@@ -124,4 +130,6 @@ if __name__ == "__main__":
   parallel = True
   debug = False
   #run_script_on_machines(kill_process_script, all_hosts, parallel=True)
-  run_script_on_machines(get_running_process_script, all_hosts, parallel=parallel, debug=debug)
+  run_script_on_machines(get_running_process_script, all_hosts, parallel=parallel, debug=debug, print_output=True)
+
+  a = 1

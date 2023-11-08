@@ -26,11 +26,6 @@ except:
   import _pickle as pickle
 import os
 
-try:
-  import seaborn as sns
-except Exception as e:
-  print("Failed to import seaborn. Probably requirements_extra from common_utils were not installed!")
-
 import glob
 import shutil
 import time
@@ -281,7 +276,7 @@ try:
       warnings.simplefilter("ignore")
       matplotlib.use('Agg')
 except:
-  pass 
+  pass
 
 def chunk_list(seq, n_chunks):
   avg = len(seq) / float(n_chunks)
@@ -339,7 +334,6 @@ def im_to_bw(image):
   gray = cv2.cvtColor(image.transpose((1,2,0)), cv2.COLOR_BGR2GRAY)
 
   return gray
-
 
 def load_image_tile(filename, top, bottom, left, right, dtype='uint8'):
   #img = pyvips.Image.new_from_file(filename, access='sequential')
@@ -1082,8 +1076,8 @@ def generate_bbox_coords(min_corner, max_corner, use_max_distance=True):
 
 
 try:
-  default_side_colors = np.array(sns.color_palette("hls", 12)) * 255.0
-  default_corner_colors = (np.array(sns.color_palette("hls", 8)) * 255.0).transpose()
+  default_side_colors = generate_nice_palette_hardoced(12)
+  default_corner_colors = generate_nice_palette_hardoced(8).transpose()
 except:
   pass
 
@@ -2220,7 +2214,7 @@ def tonumpy(tensor):
     except:
       # try to cast still, for example if it's jax
       return np.array(tensor)
-    
+
 def totorch(array, device=None):
   if type(array) is torch.Tensor:
     return array
@@ -2548,9 +2542,27 @@ def find_closest_string(word, string_list, cutoff=0.6):
   except:
     return ''
 
+# from seaborn, to avoid the import which takes lots of time and is
+# not compatible with new versions of matplotlib
+
+def generate_nice_palette_hardcoded(N_colors):
+  hardcoded_colors = np.array([[ 31, 119, 180],
+                               [255, 127,  14],
+                               [ 44, 160,  44],
+                               [214,  39,  40],
+                               [148, 103, 189],
+                               [140,  86,  75],
+                               [227, 119, 194],
+                               [127, 127, 127],
+                               [188, 189,  34],
+                               [ 23, 190, 207]], dtype='uint8')
+  if N_colors > len(hardcoded_colors):
+    # repeat as many times as necessary
+    hardcoded_colors = np.tile(hardcoded_colors,(N_colors // len(hardcoded_colors) + 1,1))
+  return hardcoded_colors[:N_colors]
+
 def generate_nice_palette(N_colors):
-  palette = sns.color_palette(None, N_colors)
-  return np.array(np.array(palette)*255.0, dtype='uint8')
+  generate_nice_palette_hardcoded(N_colors)
 
 import numpy as np
 import colorsys
@@ -2558,7 +2570,7 @@ import colorsys
 def generate_nice_palette_colorsys(N_colors):
     hues = np.linspace(0, 1, N_colors, endpoint=False)
     palette = []
-    
+
     for i in range(N_colors):
         hue = hues[i]
         saturation = 0.9 if i % 2 == 0 else 0.6
@@ -2868,6 +2880,7 @@ def bb_intersection_over_union(boxA, boxB):
 class FixSampleDataset:
   def __init__(self, dataset, samples_to_fix = -1, replication_factor=-1):
     self.dataset = dataset
+    assert not type(dataset) is FixSampleDataset, "You are calling FixSampleDataset on a FixSampleDataset!"
     self.replication_factor = replication_factor
     if type(samples_to_fix) is int and samples_to_fix == -1:
       # just get a random one
@@ -2886,8 +2899,10 @@ class FixSampleDataset:
   def set_replication_factor(self, replication_factor):
     self.replication_factor = replication_factor
 
-  def __getattr__(self, item):
-    return getattr(self.dataset, item)
+  # was producing recursive call error
+  #def __getattr__(self, item):
+  #  assert not type(self.dataset) is FixSampleDataset, "You are calling FixSampleDataset on a FixSampleDataset!"
+  #  return getattr(self.dataset, item)
 
   def __getitem__(self, item):
     item = np.random.randint(0, len(self.fixed_samples))
@@ -3005,6 +3020,15 @@ def get_current_git_commit():
   repo = git.Repo(search_parent_directories=True)
   sha = repo.head.object.hexsha
 
+def get_file_timestamp(file, as_string=False):
+  c_timestamp = os.path.getmtime(file)
+  if as_string:
+    return timestamp_to_string(c_timestamp)
+  return c_timestamp
+
+def timestamp_to_string(c_timestamp):
+  return datetime.datetime.fromtimestamp(c_timestamp)
+
 def get_freer_gpu():
     os.system('nvidia-smi -q -d Memory |grep -A6 GPU|grep Free >tmp')
     memory_available = [int(x.split()[2]) for x in open('tmp', 'r').readlines()]
@@ -3020,7 +3044,7 @@ def sort_files_by_number(files):
 
 def add_frame_counter(frames, color=(255,0,0)):
     assert type(frames) is list and all(frame.shape[0] == 3 and frame.dtype == np.uint8 for frame in frames)
-    
+
     for i, frame in enumerate(frames):
         frame = frame.transpose(1, 2, 0)  # Convert to shape (height, width, 3)
         H, W, _ = frame.shape
@@ -3029,8 +3053,8 @@ def add_frame_counter(frames, color=(255,0,0)):
         frame = cv2.putText(np.ascontiguousarray(frame), text, (W // 10, H // 10), font, 1, color, 2)
         frames[i] = frame.transpose(2, 0, 1)  # Convert back to shape (3, height, width)
     return frames
-        
-  
+
+
 if __name__ == '__main__':
   images = np.random.uniform(0, 1, size=(50, 3, 128, 128))
   imshow(images, title='random_video', verbosity=1)

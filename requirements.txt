@@ -25,7 +25,6 @@ dominate
 gitpython
 wandb
 pandas==1.1.4
-seaborn
 
 #for compatibility with low torch versions, that require PILLOW_VERSION
 Pillow
