@@ -2815,11 +2815,15 @@ def reject_outliers(data, m=2):
   return data[abs(data - np.mean(data)) < m * np.std(data)]
 
 
-def dilate(mask, dilation_percentage=0.01):
+def dilate(mask, dilation_percentage=0.01, dilation_pixels=-1):
+  if dilation_pixels == -1:
+    kernel_size = int(width * dilation_percentage)
+  else:
+    kernel_size = dilation_pixels
   assert len(mask.shape) == 2
   height, width = mask.shape
   mask_dilated = cv2.dilate(np.array(mask, dtype='uint8'),
-                            np.ones((int(width * dilation_percentage), int(width * dilation_percentage))))
+                            np.ones((kernel_size, kernel_size)))
   return mask_dilated
 
 def set_optimizer_lr(optimizer, new_lr):
