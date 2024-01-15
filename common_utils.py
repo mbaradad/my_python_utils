@@ -94,6 +94,9 @@ class AttrDict(dict):
   def __init__(self, *args, **kwargs):
     super(AttrDict, self).__init__(*args, **kwargs)
     self.__dict__ = self
+    
+def convert_to_attribute_dict(dictionary):
+  return AttrDict(dictionary)
 
 # to do with no_context:, to keep syntax but remove the effect while debugging
 # for example with torch.no_grad() -> with no_context():
