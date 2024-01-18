@@ -2565,7 +2565,7 @@ def generate_nice_palette_hardcoded(N_colors):
   return hardcoded_colors[:N_colors]
 
 def generate_nice_palette(N_colors):
-  generate_nice_palette_hardcoded(N_colors)
+  return generate_nice_palette_hardcoded(N_colors)
 
 import numpy as np
 import colorsys
