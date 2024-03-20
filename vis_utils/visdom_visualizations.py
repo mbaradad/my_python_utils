@@ -228,7 +228,7 @@ def vidshow_vis(frames, title=None, window=None, env=None, vis=None, biggest_dim
   # visdom available extensions/mimetypes
   # mimetypes (audio) = {'wav': 'wav', 'mp3': 'mp3', 'ogg': 'ogg', 'flac': 'flac'}
   # mimetypes (video) = {'mp4': 'mp4', 'ogv': 'ogg', 'avi': 'avi', 'webm': 'webm'}
-  videofile = '/tmp/%s.mp4' % next(tempfile._get_candidate_names())
+  videofile = '/tmp/%s.webm' % next(tempfile._get_candidate_names())
   writer = MyVideoWriter(videofile, inputdict={'-r': str(fps)}, verbosity=verbosity)
   for i in range(frames.shape[0]):
     if biggest_dim is None:

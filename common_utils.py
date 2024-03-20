@@ -971,7 +971,8 @@ def make_gif(ims, path, fps=None, biggest_dim=None):
     ims = ims.transpose((0,2,3,1))
   if ims.shape[-1] == 1:
     ims = np.tile(ims, (1,1,1,3))
-  with imageio.get_writer(path) as gif_writer:
+  assert path.endswith('.gif'), "Path should end with .gif"
+  with imageio.get_writer(path, loop=0) as gif_writer:
     for k in range(ims.shape[0]):
       #imsave(ims[k].mean()
       if biggest_dim is None:

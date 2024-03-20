@@ -2,7 +2,7 @@ visdom
 scikit-video #==0.1.2
 scikit-image
 scikit-learn
-imageio
+imageio==2.22.2 # with other versinos, the gif visualization of visdom we designed breaks
 plyfile
 multiprocess
 matplotlib
