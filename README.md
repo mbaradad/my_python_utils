@@ -3,6 +3,8 @@ To install the requirements and opencv + ffmpeg from conda, with:
 
 ```
 pip install -r requirements
+# if opencv gives errors (libstdc++.so.6: version `GLIBCXX_3.4.20' ...), install gcc first:
+conda install libgcc
 conda install -c conda-forge opencv
 conda install -c conda-forge ffmpeg
 ```

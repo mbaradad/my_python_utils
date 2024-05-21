@@ -340,8 +340,8 @@ if __name__ == '__main__':
   N_cameras = 30
   A = np.random.normal(0, 1, (3, N_cameras))
   R = zrotation_deg(50) @ yrotation_deg(50) @ xrotation_deg(60)
-  t = np.random.normal(0,1,3)
-  B = R @ A + t[:,None]
+  octree = np.random.normal(0,1,3)
+  B = R @ A + octree[:,None]
 
   '''
   show_pointcloud([A.transpose(),B.transpose()],[np.array([(255,0,0)]*N),np.array([(0,255,0)]*N)], title='before_aligning')

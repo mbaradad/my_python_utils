@@ -132,7 +132,7 @@ class AverageMeter(object):
             avg_strings = [avg_strings[k] for k in indices]
 
         elems_per_val = (3 if append_names else 2)
-        merged_val_avgs = [None] * (len(val_strings)* elems_per_val)
+        merged_val_avgs = [None] * (len(val_strings) * elems_per_val)
         if append_names:
             if not names is None:
                 merged_val_avgs[0::3] = names
@@ -144,6 +144,17 @@ class AverageMeter(object):
 
     def __len__(self):
         return self.meters
+
+    def get_avgs_as_dict(self):
+        return dict([(self.names[k], self.avg[k]) for k in range(len(self.names))])
+
+    def get_string_info_with_names(self):
+        info_string = ''
+        for k in range(len(self.names)):
+            if k > 0:
+                info_string += ' '
+            info_string += '{}: {} ({})'.format(self.names[k], '{:.{}f}'.format(self.val[k], self.precision), '{:.{}f}'.format(self.avg[k], self.precision))
+        return info_string
 
     def __repr__(self):
         val = ' '.join(self.get_val_strings())

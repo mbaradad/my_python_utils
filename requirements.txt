@@ -1,13 +1,11 @@
 visdom
-scikit-video
+scikit-video #==0.1.2
 scikit-image
-imageio
-#for compatibility with low torch versions, that require PILLOW_VERSION
-Pillow==7.1.2
+scikit-learn
+imageio==2.22.2 # with other versinos, the gif visualization of visdom we designed breaks
 plyfile
 multiprocess
 matplotlib
-scipy
 plotly
 pyyaml
 path.py
@@ -15,17 +13,26 @@ blessings
 progressbar
 pysrt
 pathos
-librosa
 tqdm
-kornia
 pypng
 GPUtil
 p_tqdm
 nbconvert
 plotly
-seaborn
 sorcery
 simple_3dviz
 dominate
 gitpython
 wandb
+# pandas==1.1.4
+# torch==1.13.1
+opencv-python
+
+#for compatibility with low torch versions, that require PILLOW_VERSION
+Pillow
+# scipy==1.6.0
+# the next of the packages oftentimes interfer with per project torch/numpy's..., 
+# so we keep them as optional. To install them, go to requirement_extra.txt
+# kornia
+# seaborn
+# librosa

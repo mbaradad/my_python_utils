@@ -239,7 +239,7 @@ def vidshow_vis(frames, title=None, window=None, env=None, vis=None, biggest_dim
       writer.writeFrame(actual_frame)
     except Exception as e:
       print(e)
-      print("If this fails, copy paste the ffmpeg command, by going into skvideo.io.ffmpeg.FFmpegWriter._createProcess"
+      print("If this fails, copy paste the ffmpeg command, by going into skvideo.io.ffmpeg.FFmpegWriter._createProcess "
             "as probably there are system libraries that are not been properly installed, which can be installed through conda.")
       print("e.g. libopenh264.so.5: cannot open shared object file: No such file or directory")
       print("Changing to .webm from .mp4 also helped one day that it was not working with a new conda install.")
