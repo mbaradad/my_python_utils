@@ -2995,7 +2995,7 @@ def process_in_parallel_or_not(function, elements, parallel, use_pathos=False, n
   if parallel:
     if use_pathos:
       pool = Pool()
-      return pool.apply(function, elements)
+      return pool.map(function, elements)
     if num_cpus > 0:
       return p_map(function, elements, num_cpus=num_cpus)
     else:
