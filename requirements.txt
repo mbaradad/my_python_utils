@@ -27,6 +27,7 @@ wandb
 # pandas==1.1.4
 # torch==1.13.1
 opencv-python
+soundfile
 
 #for compatibility with low torch versions, that require PILLOW_VERSION
 Pillow
