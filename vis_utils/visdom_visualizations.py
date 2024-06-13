@@ -215,6 +215,15 @@ def vidshow_gif_path(gif_path, title=None, win=None, env=None, vis=None):
 
 
 def visdom_audio(array, sample_rate, title=None, window=None, env=None, vis=None):
+  if type(array) is torch.Tensor:
+    # convert to numpy
+    array = array.detach().cpu().numpy()
+
+  if len(array) == 2 and array.shape[0] == 2:
+    array = array.transpose()
+
+  assert len(array.shape) == 1 or (len(array.shape) == 2 and array.shape[1] == 2), "Audio should be stereo or mono"
+
   if vis is None:
     vis = global_vis
 
@@ -236,8 +245,9 @@ def visdom_audio(array, sample_rate, title=None, window=None, env=None, vis=None
     window = title
 
   audio_file_wav = '/tmp/%s.wav' % next(tempfile._get_candidate_names())
-  assert len(array.shape) == 1 or (len(array.shape) == 2 and array.shape[0] == 2), "Audio should be stereo or mono"
+
   import soundfile as sf
+
 
   # Save the NumPy array to a WAV file using soundfile
   # torchaudio.save("output.wav", output, sample_rate)
@@ -246,7 +256,7 @@ def visdom_audio(array, sample_rate, title=None, window=None, env=None, vis=None
 
   vis.audio(audiofile=audio_file_wav, win=win, opts=opts, env=env)
   
-  return audiofile
+  return audio_file_wav
 
 def vidshow_vis(frames, title=None, window=None, env=None, vis=None, biggest_dim=None, fps=10, verbosity=0):
   # if it does not work, change the ffmpeg. It was failing using anaconda ffmpeg default video settings,
