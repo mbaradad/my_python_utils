@@ -164,6 +164,7 @@ class MyVideoReader():
     self.position_cursor_frame(i)
     frame = self.get_next_frame()
     self.position_cursor_frame(old_frame_i)
+    frame = frame[::-1]
     return frame
 
   def is_opened(self):
