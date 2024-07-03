@@ -888,7 +888,7 @@ def add_axis_to_image(im):
   data = data.transpose((2,0,1))
   return data
 
-def preprocess_im_to_plot(im, normalize_image=True):
+def preprocess_im_to_plot(im, normalize=True):
   if type(im) is list:
     for k in range(len(im)):
       im[k] = tonumpy(im[k])
@@ -912,11 +912,20 @@ def preprocess_im_to_plot(im, normalize_image=True):
   if len(im.shape) == 2:
     # expand first if 1 channel image
     im = im[None, :, :]
-  range_min, range_max = im.min(), im.max()
+  if normalize:
+    return normalize_image(im, return_range=True)
+  else:
+    return im
 
-  if normalize_image and im.max() != im.min():
+def normalize_image(im, return_range=False):
+  range_min, range_max = im.min(), im.max()
+  if im.max() != im.min():
     im = (im - im.min()) / (im.max() - im.min())
-  return im, range_min, range_max
+
+  if return_range:
+    return im, range_min, range_max
+  else:
+    return im
 
 def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True,
            max_batch_display=10, window=None, env=None, fps=10, vis=None,
