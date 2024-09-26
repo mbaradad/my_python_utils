@@ -78,15 +78,15 @@ def imshow_vis(im, title=None, win=None, env=None, vis=None):
     im = im/255.0
   vis.image(im, win=win, opts=opts, env=env)
 
-def visdom_dict(dict_to_plot, title=None, window=None, env=PYCHARM_VISDOM, vis=None, simplify_floats=True):
+def visdom_dict(dict_to_plot, title=None, win=None, env=PYCHARM_VISDOM, vis=None, simplify_floats=True):
   if vis is None:
     vis = global_vis
   opts = dict()
+  win, title, vis = visdom_default_window_title_and_vis(win, title, vis)
   if not title is None:
     opts['title'] = title
   vis.win_exists(title)
-  if window is None:
-    window = title
+
   dict_to_plot_sorted_keys = [k for k in dict_to_plot.keys()]
   dict_to_plot_sorted_keys.sort()
   html = '''<table style="width:100%">'''
@@ -94,7 +94,7 @@ def visdom_dict(dict_to_plot, title=None, window=None, env=PYCHARM_VISDOM, vis=N
     v = dict_to_plot[k]
     html += '<tr> <th>{}</th> <th>{}</th> </tr>'.format(k, v)
   html += '</table>'
-  vis.text(html, win=window, opts=opts, env=env)
+  vis.text(html, win=win, opts=opts, env=env)
 
 def vidshow_file_vis(videofile, title=None, window=None, env=None, vis=None, fps=10):
   # if it fails, check the ffmpeg version.
