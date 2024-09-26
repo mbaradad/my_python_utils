@@ -641,6 +641,32 @@ def tile_images_pdf(imgs, pdf_output_file, tiles, tile_size, border_pixels=0, re
 
   return image
 
+# returns a list of strings
+def split_string_into_lines(string, chars_per_line):
+    lines = []
+    current_line = ""
+    for word in string.split():
+        if len(current_line) + len(word) > chars_per_line:
+            lines.append(current_line.strip())
+            current_line = word + " "
+        else:
+            current_line += word + " "
+    if current_line:
+        lines.append(current_line.strip())
+    return lines
+
+def create_image_captions_images(images, image_captions, tiles=-1):
+    assert len(image_captions) == len(images), "captions_images and images must have the same length"
+    if tiles is None:
+        tiles = (2, len(image_captions))
+    else:
+        assert len(tiles) == 2 and type(tiles) in [tuple, list], "tiles must be a tuple or list of length 2"
+
+    all_caption_images = [create_text_image(split_string_into_lines(k, 35), line_size=(50,750), font_scale=1.0, squared=True).transpose((2,0,1)) for k in image_captions]
+    images_with_captions = list_of_lists_into_single_list([list(k) for k in zip(images, all_caption_images)])
+    return tile_images(images_with_captions, tiles)
+
+
 def str2intlist(v):
  if len(v) == 0:
    return []
@@ -1507,11 +1533,16 @@ def scale_img_to_fit_canvas(img, canvas_height, canvas_width):
   return np.array(im).transpose((2,0,1))
 
 
-def create_text_image(lines, line_size=(50,500), color=(0, 0, 0)):
-  im = 255*np.ones((line_size[0]*len(lines), line_size[1], 3), dtype='uint8')
+def create_text_image(lines, line_size=(50,500), color=(0, 0, 0), font_scale=1, squared=False):
+  if squared:
+    canvas_shape = (line_size[1], line_size[1], 3)
+  else:
+    canvas_shape = (line_size[0]*len(lines), line_size[1], 3)
+  
+  im = 255*np.ones(canvas_shape, dtype='uint8')
   font = cv2.FONT_HERSHEY_TRIPLEX
   for k in range(len(lines)):
-    im = cv2.putText(im, lines[k], (10, line_size[0]*(k + 1) - 10), font, 1, color, 2, cv2.LINE_AA)
+    im = cv2.putText(im, lines[k], (10, line_size[0]*(k + 1) - 10), font, font_scale, color, 2, cv2.LINE_AA)
   return im
 
 
