@@ -3099,10 +3099,10 @@ def add_frame_counter(frames, color=(255,0,0)):
 
 
 if __name__ == '__main__':
-  images = np.random.uniform(0, 1, size=(50, 3, 128, 128))
-  imshow(images, title='random_video', verbosity=1)
+  image_files = np.random.uniform(0, 1, size=(50, 3, 128, 128))
+  imshow(image_files, title='random_video', verbosity=1)
 
-  imshow(tile_images(images, border_pixels=4), title='tiles_example')
+  imshow(tile_images(image_files, border_pixels=4), title='tiles_example')
 
   # print_nvidia_smi()
   random.randint(1,3)
