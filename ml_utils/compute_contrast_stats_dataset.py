@@ -59,9 +59,9 @@ if __name__ == '__main__':
   pixels_sum_squared = np.zeros((3), dtype='float64')
   means = []
   stds = []
-  for i, images in enumerate(tqdm(loader)):
-    means.append(torch.mean(images, dim=(-1,-2)))
-    stds.append(torch.std(images, dim=(-1,-2)))
+  for i, image_files in enumerate(tqdm(loader)):
+    means.append(torch.mean(image_files, dim=(-1,-2)))
+    stds.append(torch.std(image_files, dim=(-1,-2)))
 
     if (i + 1) % 100 == 0:
       compute_and_print_metrics(means, stds)
