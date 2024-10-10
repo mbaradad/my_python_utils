@@ -4,7 +4,7 @@ import skvideo
 import sys
 import os
 
-if 'anaconda' in sys.executable:
+if 'anaconda' in sys.executable or 'miniforge' in sys.executable:
   # set ffmpeg to anaconda path
   skvideo.setFFmpegPath(os.path.split(sys.executable)[0])
 else:

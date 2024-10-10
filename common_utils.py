@@ -655,6 +655,9 @@ def split_string_into_lines(string, chars_per_line):
         lines.append(current_line.strip())
     return lines
 
+def create_caption_images(image_captions):
+  return [create_text_image(split_string_into_lines(k, 35), line_size=(50,750), font_scale=1.0, squared=True).transpose((2,0,1)) for k in image_captions]
+
 def create_image_captions_images(images, image_captions, tiles=-1):
     assert len(image_captions) == len(images), "captions_images and images must have the same length"
     if tiles is None:
@@ -662,7 +665,7 @@ def create_image_captions_images(images, image_captions, tiles=-1):
     else:
         assert len(tiles) == 2 and type(tiles) in [tuple, list], "tiles must be a tuple or list of length 2"
 
-    all_caption_images = [create_text_image(split_string_into_lines(k, 35), line_size=(50,750), font_scale=1.0, squared=True).transpose((2,0,1)) for k in image_captions]
+    all_caption_images = create_caption_images(image_captions)
     images_with_captions = list_of_lists_into_single_list([list(k) for k in zip(images, all_caption_images)])
     return tile_images(images_with_captions, tiles)
 
@@ -1007,7 +1010,7 @@ def make_gif(ims, path, fps=None, biggest_dim=None):
   if ims.shape[-1] == 1:
     ims = np.tile(ims, (1,1,1,3))
   assert path.endswith('.gif'), "Path should end with .gif"
-  with imageio.get_writer(path, loop=0) as gif_writer:
+  with imageio.get_writer(path, loop=0, fps=fps if fps is not None else 10) as gif_writer:
     for k in range(ims.shape[0]):
       #imsave(ims[k].mean()
       if biggest_dim is None:
@@ -1015,9 +1018,9 @@ def make_gif(ims, path, fps=None, biggest_dim=None):
       else:
         actual_im = np.transpose(scale_image_biggest_dim(np.transpose(ims[k]), biggest_dim))
       gif_writer.append_data(actual_im)
-  if not fps is None:
-    gif = imageio.mimread(path)
-    imageio.mimsave(path, gif, fps=fps)
+  #if not fps is None:
+  # gif = imageio.mimread(path)
+  #  imageio.mimsave(path, gif, fps=fps)
 
 def list_of_lists_into_single_list(list_of_lists):
   flat_list = [item for sublist in list_of_lists for item in sublist]
@@ -2254,6 +2257,8 @@ def tonumpy(tensor):
         tensor = tensor.data
       if tensor.is_cuda:
         tensor = tensor.cpu()
+      if tensor.dtype == torch.bfloat16:
+        tensor = tensor.float()
       return tensor.detach().numpy()
     except:
       # try to cast still, for example if it's jax
@@ -2872,12 +2877,12 @@ def reject_outliers(data, m=2):
 
 
 def dilate(mask, dilation_percentage=0.01, dilation_pixels=-1):
+  height, width = mask.shape
   if dilation_pixels == -1:
     kernel_size = int(width * dilation_percentage)
   else:
     kernel_size = dilation_pixels
   assert len(mask.shape) == 2
-  height, width = mask.shape
   mask_dilated = cv2.dilate(np.array(mask, dtype='uint8'),
                             np.ones((kernel_size, kernel_size)))
   return mask_dilated
