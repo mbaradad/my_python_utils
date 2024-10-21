@@ -561,11 +561,17 @@ def get_image_size_fast_png(file_path):
 
   return width, height
 
-def tile_images(imgs, tiles_x_y=None, tile_size_x_y=None, border_pixels=0, border_color=(0, 0, 0), border_pixels_x_y=None):
+def tile_images(imgs, tiles_x_y=None, tile_size_x_y=None, border_pixels=0, border_color=(0, 0, 0), border_pixels_x_y=None, column_captions=None):
   if tile_size_x_y is None:
     tile_size_y, tile_size_x = imgs[0].shape[-2:]
   else:
     tile_size_x, tile_size_y = tile_size_x_y
+  if not column_captions is None:
+    # create captions
+    assert not tiles_x_y is None, "If column captions are provided, tiles_x_y must be provided"
+    assert tiles_x_y[0] == len(column_captions), "Number of column captions should match the number of columns"
+    caption_images = create_caption_images(column_captions)
+  
   if tiles_x_y is None:
     n_tiles_x = int(np.ceil(np.sqrt(len(imgs))))
     # just so that they fit, no need to have a square grid
@@ -1062,6 +1068,14 @@ def str2img(string_to_print, height=100, width=100):
   d = ImageDraw.Draw(img)
   d.text((20, 20), string_to_print, fill=(255, 255, 255))
   return np.array(img).transpose((2,0,1))
+
+def count_total_parameters(network, return_as_string=False):
+  n_parameters = sum(p.numel() for p in network.parameters())
+  if return_as_string:
+    return f"{n_parameters:,}"
+  else:
+    return n_parameters
+
 
 def count_trainable_parameters(network, return_as_string=False):
   n_parameters = sum(p.numel() for p in network.parameters() if p.requires_grad)
