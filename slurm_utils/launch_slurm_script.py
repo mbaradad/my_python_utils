@@ -4,7 +4,6 @@ import subprocess
 
 import os
 
-from datetime import datetime
 
 def str2bool(v):
   assert type(v) is str
@@ -60,6 +59,7 @@ if __name__ == '__main__':
   while t_1 - t_init < args.max_total_time_days * 3600 * 24 and n < args.max_runs:
     print("Running slurm script {} for time: {}".format(args.script, n + 1))
     t_0 = time.time()
+    from datetime import datetime
 
     now = datetime.now()  # current date and time
 

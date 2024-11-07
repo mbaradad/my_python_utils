@@ -24,7 +24,6 @@ import cv2
 import math
 
 from multiprocessing import Queue, Process
-import datetime
 
 import torch
 
@@ -398,6 +397,8 @@ class ThreadedVisdomPlotter():
         return self.queue.qsize()
 
   def put_plot_dict(self, plot_dict):
+    from datetime import datetime
+
     try:
       assert type(plot_dict) is dict
       assert 'env' in plot_dict, 'Env to plot not found in plot_dict!'

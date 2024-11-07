@@ -54,7 +54,6 @@ import re
 import numpy as np
 from PIL import Image, ImageDraw
 
-import datetime
 import json
 import difflib
 
@@ -132,7 +131,8 @@ def select_gpus(gpus_arg):
   return gpus
 
 def gettimedatestring():
-  return datetime.datetime.now().strftime("%m-%d-%H:%M")
+  from datetime import datetime
+  return datetime.now().strftime("%m-%d-%H:%M")
 
 def get_time_microseconds():
   from datetime import datetime
@@ -3089,6 +3089,7 @@ def get_file_timestamp(file, as_string=False):
   return c_timestamp
 
 def timestamp_to_string(c_timestamp):
+  from datetime import datetime
   return datetime.datetime.fromtimestamp(c_timestamp)
 
 def get_freer_gpu():
