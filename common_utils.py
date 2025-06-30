@@ -948,7 +948,7 @@ def preprocess_im_to_plot(im, normalize=True):
     # expand first if 1 channel image
     im = im[None, :, :]
   if normalize:
-    return normalize_image(im, return_range=True)
+    return normalize_image(im, return_range=False)
   else:
     return im
 
@@ -974,7 +974,7 @@ def imshow(im, title='none', path=None, biggest_dim=None, normalize_image=True,
   if window is None:
     window = title
 
-  im, range_min, range_max = preprocess_im_to_plot(im, normalize_image)
+  im = preprocess_im_to_plot(im, normalize_image)
   postfix = ''
   if add_ranges:
     postfix = '_max_{:.2f}_min_{:.2f}'.format()
