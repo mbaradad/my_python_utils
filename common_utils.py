@@ -947,6 +947,8 @@ def preprocess_im_to_plot(im, normalize=True):
   if len(im.shape) == 2:
     # expand first if 1 channel image
     im = im[None, :, :]
+  if im.shape[0] > 3:
+    im = im[:3]
   if normalize:
     return normalize_image(im, return_range=False)
   else:
